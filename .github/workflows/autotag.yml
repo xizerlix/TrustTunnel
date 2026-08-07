@@ -1,16 +1,13 @@
+# Upstream uses AdGuardSoftwareLimited/native-libs-common (not available on forks).
+
 name: Check CHANGELOG and auto-tag
 
 on:
-  push:
-    branches:
-      - master
-      - 'stable-*'
+  workflow_dispatch:
 
 jobs:
-  autotag:
-    name: Check CHANGELOG and auto-tag
-    if: github.repository == 'AdGuardSoftwareLimited/trusttunnel-endpoint'
-    uses: AdGuardSoftwareLimited/native-libs-common/.github/workflows/autotag.yml@master
-    secrets: inherit
-    permissions:
-      contents: write
+  upstream-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled on fork
+        run: echo "Auto-tag runs only on AdGuardSoftwareLimited/trusttunnel-endpoint upstream."

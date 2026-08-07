@@ -30,19 +30,18 @@ jobs:
             cmake \
             pkg-config \
             libssl-dev \
+            libclang-dev \
             perl \
             golang-go
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.95
+        run: rustup toolchain install 1.95 --profile minimal
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binaries
-        run: cargo build --bins --release
+        run: cargo +1.95 build --bins --release
 
       - name: Package
         env:
@@ -65,6 +64,6 @@ jobs:
           body: |
             Custom TrustTunnel build: per-client metrics (`/clients`) and traffic quotas.
 
-            Install on Linux x86_64 VPS — see CUSTOM_INSTALL.md in the repository.
+            Install on Linux x86_64 VPS — see docs/CUSTOM_INSTALL.md in the repository.
           files: ${{ env.PACKAGE }}
           generate_release_notes: true

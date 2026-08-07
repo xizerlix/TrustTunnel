@@ -1,30 +1,14 @@
+# Upstream uses AdGuardSoftwareLimited/actions (not available on forks).
+# This stub replaces the reusable-workflow call so pushes to master stay green.
+
 name: Mirror to public repository
 
 on:
-  push:
-    branches:
-      - master
-      - 'stable-*'
-      - 'dev-*'
-    tags:
-      - '*'
   workflow_dispatch:
-  repository_dispatch:
-    types:
-      - After auto-tag
 
 jobs:
-  mirror:
-    name: Mirror to public repository
-    if: github.repository == 'AdGuardSoftwareLimited/trusttunnel-endpoint'
-    uses: AdGuardSoftwareLimited/actions/.github/workflows/mirror.yml@master
-    with:
-      team: corelibs
-      target_repo: 'git@github.com:TrustTunnel/TrustTunnel.git'
-      disable_workflows_target: all -bench.yml -lint-md.yml -lint-rust.yml -run-tests-public.yml -security-audit.yml
-      disable_workflows_source: bench.yml lint-md.yml lint-rust.yml run-tests-public.yml security-audit.yml
-    secrets: inherit
-    permissions:
-      contents: read
-      actions: write
-      id-token: write
+  upstream-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled on fork
+        run: echo "Mirror runs only on AdGuardSoftwareLimited/trusttunnel-endpoint upstream."

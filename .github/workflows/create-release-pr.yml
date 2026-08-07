@@ -1,27 +1,13 @@
+# Upstream uses AdGuardSoftwareLimited/native-libs-common (not available on forks).
+
 name: Create release PR
 
 on:
   workflow_dispatch:
-    inputs:
-      semver_part:
-        description: 'Version part to increment'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-          - major
-          - minor
-          - patch
 
 jobs:
-  create-release-pr:
-    name: Create release PR
-    if: github.repository == 'AdGuardSoftwareLimited/trusttunnel-endpoint'
-    uses: AdGuardSoftwareLimited/native-libs-common/.github/workflows/create-release-pr.yml@master
-    with:
-      semver_part: ${{ inputs.semver_part }}
-      set_version_script_path: scripts/set_version.sh
-    secrets: inherit
-    permissions:
-      contents: write
-      pull-requests: write
+  upstream-only:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled on fork
+        run: echo "Release PR workflow runs only on AdGuardSoftwareLimited/trusttunnel-endpoint upstream."
