@@ -62,8 +62,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: TrustTunnel ${{ github.event.inputs.tag || github.ref_name }}
           body: |
-            Custom TrustTunnel build: per-client metrics (`/clients`) and traffic quotas.
-
-            Install on Linux x86_64 VPS — see docs/CUSTOM_INSTALL.md in the repository.
+            Linux x86_64 build with per-client metrics (`/clients`) and optional traffic quotas.
+            See CONFIGURATION.md and METRICS.md in the repository.
           files: ${{ env.PACKAGE }}
           generate_release_notes: true
