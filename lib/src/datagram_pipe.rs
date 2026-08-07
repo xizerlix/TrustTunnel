@@ -105,7 +105,9 @@ where
     }
 }
 
-impl<D: Datagram + Debug, F: Fn(pipe::SimplexDirection, usize) + Send> GenericSimplexPipe<D, F> {
+impl<D: Datagram + Debug, F: Fn(pipe::SimplexDirection, usize, log_utils::IdChain<u64>) + Send>
+    GenericSimplexPipe<D, F>
+{
     pub fn new(
         direction: pipe::SimplexDirection,
         source: Box<dyn Source<Output = D>>,
