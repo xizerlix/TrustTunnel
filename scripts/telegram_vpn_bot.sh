@@ -32,14 +32,14 @@ format_traffic_clients() {
         (if .limit != null and .limit > 0
             then ((.total * 100 / .limit) | floor | tostring) + "%"
             else "—" end) as $pct |
-        (if .outbound >= 1073741824 then ((.outbound / 1073741824 * 100 | round) / 100 | tostring) + " GiB"
-            elif .outbound >= 1048576 then ((.outbound / 1048576 * 10 | round) / 10 | tostring) + " MiB"
-            elif .outbound >= 1024 then ((.outbound / 1024 * 10 | round) / 10 | tostring) + " KiB"
-            else (.outbound | tostring) + " B" end) as $down |
         (if .inbound >= 1073741824 then ((.inbound / 1073741824 * 100 | round) / 100 | tostring) + " GiB"
             elif .inbound >= 1048576 then ((.inbound / 1048576 * 10 | round) / 10 | tostring) + " MiB"
             elif .inbound >= 1024 then ((.inbound / 1024 * 10 | round) / 10 | tostring) + " KiB"
-            else (.inbound | tostring) + " B" end) as $up |
+            else (.inbound | tostring) + " B" end) as $down |
+        (if .outbound >= 1073741824 then ((.outbound / 1073741824 * 100 | round) / 100 | tostring) + " GiB"
+            elif .outbound >= 1048576 then ((.outbound / 1048576 * 10 | round) / 10 | tostring) + " MiB"
+            elif .outbound >= 1024 then ((.outbound / 1024 * 10 | round) / 10 | tostring) + " KiB"
+            else (.outbound | tostring) + " B" end) as $up |
         (if .total >= 1073741824 then ((.total / 1073741824 * 100 | round) / 100 | tostring) + " GiB"
             elif .total >= 1048576 then ((.total / 1048576 * 10 | round) / 10 | tostring) + " MiB"
             elif .total >= 1024 then ((.total / 1024 * 10 | round) / 10 | tostring) + " KiB"

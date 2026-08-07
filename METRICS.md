@@ -97,7 +97,7 @@ Returns per-client traffic and session aggregates as JSON. Includes all users fr
 
 - `ips` lists all distinct client addresses currently seen for the user. Each entry includes
   `tag` in `#ip_a_b_c_d` form (same convention as common Telegram admin bots).
-- `inbound` is upload (client → internet), `outbound` is download (internet → client).
+- `inbound` is download (internet → client), `outbound` is upload (client → internet).
 - `total` is `inbound + outbound` and is what traffic quotas compare against.
 - `limit` is the configured quota in bytes, or omitted/`null` when unlimited.
 - `quota_exceeded` is `true` when `total >= limit`.
