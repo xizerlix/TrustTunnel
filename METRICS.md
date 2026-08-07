@@ -69,7 +69,10 @@ Returns per-client traffic and session aggregates as JSON. Includes all users fr
 [
   {
     "username": "alice",
-    "ip": "203.0.113.10",
+    "ips": [
+      { "address": "203.0.113.10", "tag": "#ip_203_0_113_10" },
+      { "address": "198.51.100.5", "tag": "#ip_198_51_100_5" }
+    ],
     "sessions": 2,
     "inbound": 123456,
     "outbound": 789012,
@@ -79,7 +82,7 @@ Returns per-client traffic and session aggregates as JSON. Includes all users fr
   },
   {
     "username": "bob",
-    "ip": null,
+    "ips": [],
     "sessions": 0,
     "inbound": 0,
     "outbound": 0,
@@ -92,6 +95,8 @@ Returns per-client traffic and session aggregates as JSON. Includes all users fr
 
 **Notes:**
 
+- `ips` lists all distinct client addresses currently seen for the user. Each entry includes
+  `tag` in `#ip_a_b_c_d` form (same convention as common Telegram admin bots).
 - `inbound` is upload (client → internet), `outbound` is download (internet → client).
 - `total` is `inbound + outbound` and is what traffic quotas compare against.
 - `limit` is the configured quota in bytes, or omitted/`null` when unlimited.

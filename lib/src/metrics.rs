@@ -6,7 +6,7 @@ use crate::{core, http_codec, log_id, log_utils};
 use bytes::Bytes;
 use prometheus::Encoder;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -40,9 +40,15 @@ struct ClientInfo {
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
+pub(crate) struct ClientIpEntry {
+    address: String,
+    tag: String,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub(crate) struct ClientSummary {
     username: String,
-    ip: Option<String>,
+    ips: Vec<ClientIpEntry>,
     sessions: u64,
     inbound: u64,
     outbound: u64,
@@ -246,58 +252,79 @@ impl Metrics {
         &self,
         configured_usernames: impl IntoIterator<Item = String>,
     ) -> Vec<ClientSummary> {
-        let mut agg: HashMap<String, ClientSummary> = HashMap::new();
+        struct AggEntry {
+            sessions: u64,
+            inbound: u64,
+            outbound: u64,
+            ips: BTreeSet<String>,
+        }
+
+        impl Default for AggEntry {
+            fn default() -> Self {
+                Self {
+                    sessions: 0,
+                    inbound: 0,
+                    outbound: 0,
+                    ips: BTreeSet::new(),
+                }
+            }
+        }
+
+        let mut agg: HashMap<String, AggEntry> = HashMap::new();
 
         for username in configured_usernames {
-            agg.entry(username.clone()).or_insert_with(|| ClientSummary {
-                username,
-                ip: None,
-                sessions: 0,
-                inbound: 0,
-                outbound: 0,
-                total: 0,
-                limit: None,
-                quota_exceeded: false,
-            });
+            agg.entry(username).or_default();
         }
 
         {
             let clients_map = self.clients.lock().unwrap();
             for info in clients_map.values() {
                 let uname = info.username.clone().unwrap_or_default();
-                let entry = agg.entry(uname.clone()).or_insert_with(|| ClientSummary {
-                    username: uname.clone(),
-                    ip: info.ip.map(|x| x.to_string()),
-                    sessions: 0,
-                    inbound: 0,
-                    outbound: 0,
-                    total: 0,
-                    limit: None,
-                    quota_exceeded: false,
-                });
+                if uname.is_empty() {
+                    continue;
+                }
+                let entry = agg.entry(uname).or_default();
                 entry.sessions = entry.sessions.saturating_add(info.sessions);
                 entry.inbound = entry.inbound.saturating_add(info.inbound);
                 entry.outbound = entry.outbound.saturating_add(info.outbound);
-                if entry.ip.is_none() {
-                    entry.ip = info.ip.map(|x| x.to_string());
+                if let Some(ip) = info.ip {
+                    entry.ips.insert(ip.to_string());
                 }
             }
         }
 
+        let mut summaries: Vec<ClientSummary> = agg
+            .into_iter()
+            .map(|(username, entry)| ClientSummary {
+                username,
+                ips: entry
+                    .ips
+                    .into_iter()
+                    .map(|address| ClientIpEntry {
+                        tag: ip_hashtag(&address),
+                        address,
+                    })
+                    .collect(),
+                sessions: entry.sessions,
+                inbound: entry.inbound,
+                outbound: entry.outbound,
+                total: entry.inbound.saturating_add(entry.outbound),
+                limit: None,
+                quota_exceeded: false,
+            })
+            .collect();
+
         if let Some(limiter) = self.traffic_limiter.as_ref() {
-            for summary in agg.values_mut() {
+            for summary in &mut summaries {
                 let persisted = limiter.summary(&summary.username);
                 summary.inbound = summary.inbound.max(persisted.inbound);
                 summary.outbound = summary.outbound.max(persisted.outbound);
+                summary.total = summary.inbound.saturating_add(summary.outbound);
                 summary.limit = persisted.limit;
                 summary.quota_exceeded = persisted.quota_exceeded;
             }
         }
 
-        let mut summaries: Vec<_> = agg.into_values().collect();
-        for summary in &mut summaries {
-            summary.total = summary.inbound.saturating_add(summary.outbound);
-        }
         summaries.sort_by(|a, b| a.username.cmp(&b.username));
         summaries
     }
@@ -576,6 +603,13 @@ async fn handle_metrics_collect(
     sink.eof()
 }
 
+fn ip_hashtag(address: &str) -> String {
+    format!(
+        "#ip_{}",
+        address.replace('.', "_").replace(':', "_")
+    )
+}
+
 fn username_label(username: Option<&str>) -> &str {
     match username {
         Some(name) if !name.is_empty() => name,
@@ -691,12 +725,43 @@ mod tests {
         assert_eq!(alice.outbound, 200);
         assert_eq!(alice.total, 300);
         assert_eq!(alice.limit, Some(1000));
-        assert_eq!(alice.ip.as_deref(), Some("1.2.3.4"));
+        assert_eq!(alice.ips.len(), 1);
+        assert_eq!(alice.ips[0].address, "1.2.3.4");
+        assert_eq!(alice.ips[0].tag, "#ip_1_2_3_4");
 
         let bob = summaries.iter().find(|x| x.username == "bob").unwrap();
         assert_eq!(bob.sessions, 0);
-        assert_eq!(bob.inbound, 0);
-        assert_eq!(bob.outbound, 0);
+        assert!(bob.ips.is_empty());
+    }
+
+    #[test]
+    fn build_client_summaries_collects_all_unique_ips() {
+        let metrics = make_metrics();
+        for (id, ip) in [(1_u64, Ipv4Addr::new(1, 2, 3, 4)), (2, Ipv4Addr::new(5, 6, 7, 8))] {
+            let conn_id = log_utils::IdItem::new("TEST={}", id).into();
+            let conn_key = conn_id.to_string();
+            metrics.register_connection(conn_key.clone(), IpAddr::V4(ip));
+            metrics.transfer_session_username(Protocol::Http2, &conn_key, Some("alice".into()));
+            let _guard = metrics.clone().client_sessions_counter(
+                Protocol::Http2,
+                conn_key,
+                Some("alice".into()),
+            );
+        }
+
+        let alice = metrics
+            .build_client_summaries(["alice".into()])
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(alice.ips.len(), 2);
+        assert_eq!(alice.ips[0].tag, "#ip_1_2_3_4");
+        assert_eq!(alice.ips[1].tag, "#ip_5_6_7_8");
+    }
+
+    #[test]
+    fn ip_hashtag_matches_bot_format() {
+        assert_eq!(ip_hashtag("195.170.198.84"), "#ip_195_170_198_84");
     }
 
     #[test]

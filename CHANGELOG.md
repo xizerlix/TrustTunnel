@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - [Feature] Per-client metrics: `client_sessions`, `inbound_traffic_bytes`, and `outbound_traffic_bytes` now include a `username` label; new `/clients` JSON endpoint on the metrics listener returns per-user sessions, traffic totals, limits, and quota status.
+- [Feature] `/clients` JSON: `ips` array with `address` and `#ip_*` `tag` per connected client address; unauthenticated entries are omitted from the response.
 - [Feature] Traffic quotas: `max_traffic_bytes` per client in `credentials.toml`, optional `default_max_traffic_bytes_per_client` and `traffic_usage_file` in `vpn.toml`; clients over quota are blocked from new VPN requests.
 
 ### Changed

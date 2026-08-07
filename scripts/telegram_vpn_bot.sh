@@ -50,7 +50,9 @@ format_traffic_clients() {
                   else (.limit | tostring) + " B" end)
             else "∞" end) as $lim |
         $icon + " *" + .username + "* — " + (.sessions | tostring) + " сесс." +
-        (if .ip != null then "%0A   🌐 `" + .ip + "`" else "" end) +
+        (if (.ips | length) > 0
+            then (.ips | map("%0A   🌐 `" + .address + "`%0A   🆔 " + .tag) | join(""))
+            else "" end) +
         "%0A   ⬇️ " + $down + "  ⬆️ " + $up +
         "%0A   Σ *" + $sum + "* / " + $lim +
         (if .limit != null then " (" + $pct + ")" else "" end)
