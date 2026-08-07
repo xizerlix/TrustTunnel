@@ -1,0 +1,70 @@
+name: Build custom release (fork)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. custom-1.0.0"
+        required: true
+        default: custom-1.0.0
+  push:
+    tags:
+      - "custom-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-x86_64:
+    name: Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            perl \
+            golang-go
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --bins --release
+
+      - name: Package
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -eux
+          ARCH="linux-x86_64"
+          NAME="trusttunnel-${TAG}-${ARCH}"
+          mkdir -p "dist/${NAME}"
+          cp target/release/trusttunnel_endpoint "dist/${NAME}/"
+          cp LICENSE "dist/${NAME}/"
+          tar -czf "${NAME}.tar.gz" -C dist "${NAME}"
+          echo "PACKAGE=${NAME}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: TrustTunnel ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            Custom TrustTunnel build: per-client metrics (`/clients`) and traffic quotas.
+
+            Install on Linux x86_64 VPS — see CUSTOM_INSTALL.md in the repository.
+          files: ${{ env.PACKAGE }}
+          generate_release_notes: true
