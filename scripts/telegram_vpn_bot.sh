@@ -40,10 +40,15 @@ build_vpn_key_map() {
 clients_totals_line() {
     local json="$1"
     echo "$json" | jq -r '
+        ([.[] | select(.sessions > 0) | (.ips // [])[] | .address] | length) as $links |
         ([.[] | (.ips // [])[] | .address] | unique | length) as $ips |
         ([.[] | .sessions] | add // 0) as $sess |
         ([.[] | select(.sessions > 0)] | length) as $users |
-        "VPN: \($ips) IP · \($sess) сесс. · \($users) юз."
+        if $links > $ips then
+            "VPN: \($ips) уник. IP (\($links) прив.) · \($sess) сесс. · \($users) юз."
+        else
+            "VPN: \($ips) уник. IP · \($sess) сесс. · \($users) юз."
+        end
     '
 }
 
@@ -112,11 +117,17 @@ format_traffic_clients() {
     fi
 
     totals=$(clients_totals_line "$json")
-    local TEXT="📶 *Трафик по клиентам VPN*%0A${totals}%0A(сесс. = активные VPN-туннели, не TCP-сокеты)"
+    local TEXT="📶 *Трафик по клиентам VPN*%0A${totals}%0A(сесс. = туннели; прив. = IP у юзера, один NAT может повторяться)"
 
     while IFS= read -r block; do
         [[ -n "$block" ]] && TEXT+="%0A%0A$block"
-    done < <(echo "$json" | jq -r '.[] |
+    done < <(echo "$json" | jq -r '
+        def shared_ips:
+            [.[] | select(.sessions > 0) | .username as $u | (.ips // [])[] |
+                {ip: .address, user: $u}] | group_by(.ip) | map(select(length > 1) | .[0].ip);
+
+        (shared_ips) as $shared |
+        .[] |
         (if .quota_exceeded then "⛔" else "✅" end) as $icon |
         (if .limit != null and .limit > 0
             then ((.total * 100 / .limit) | floor | tostring) + "%"
@@ -139,9 +150,13 @@ format_traffic_clients() {
                   else (.limit | tostring) + " B" end)
             else "∞" end) as $lim |
         $icon + " *" + .username + "* — " + (.sessions | tostring) + " сесс." +
-        (if (.ips | length) > 0
-            then (.ips | map("%0A   🌐 `" + .address + "`%0A   🆔 " + .tag) | join(""))
-            else "" end) +
+        (if (.ips | length) > 0 then
+            (.ips | map(
+                "%0A   🌐 `" + .address + "`" +
+                (if (.address as $a | $shared | index($a)) then " ↔ общий NAT" else "" end) +
+                "%0A   🆔 " + .tag
+            ) | join(""))
+        else "" end) +
         "%0A   ⬇️ " + $down + "  ⬆️ " + $up +
         "%0A   Σ *" + $sum + "* / " + $lim +
         (if .limit != null then " (" + $pct + ")" else "" end)
@@ -194,12 +209,15 @@ build_status_text() {
             ip=$(echo "$grouped" | jq -r ".[$i].ip")
             tag=$(echo "$grouped" | jq -r ".[$i].tag")
             users_line=$(echo "$grouped" | jq -r ".[$i].users | map(\"\(.user) (\(.sessions) сесс.)\") | join(\", \")")
+            user_count=$(echo "$grouped" | jq -r ".[$i].users | length")
+            shared_note=""
+            [[ "$user_count" -gt 1 ]] && shared_note=" ↔ общий NAT"
             start=$(jq -r --arg ip "$ip" '
                 [to_entries[] | select(.key | endswith("|" + $ip)) | .value] | min // empty
             ' "$ACTIVE_VPN_STATE" 2>/dev/null)
             [[ -z "$start" || "$start" == "null" ]] && start=$NOW
             dur=$(format_time $((NOW - start)))
-            TEXT+="%0A%0A🌐 \`$ip\` — *$dur*%0A🆔 \`$tag\`%0A👤 $users_line"
+            TEXT+="%0A%0A🌐 \`$ip\` — *$dur*$shared_note%0A🆔 $tag%0A👤 $users_line"
         done
     fi
 
