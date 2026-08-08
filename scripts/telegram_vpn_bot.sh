@@ -31,7 +31,7 @@ clients_json_valid() {
 build_vpn_key_map() {
     local json="$1"
     echo "$json" | jq -c '
-        [.[] | select(.sessions > 0) | .username as $u | .ips[]?.address |
+        [.[] | select(.sessions > 0) | .username as $u | (.ips // [])[] | .address |
             select(. != null and . != "") | "\($u)|\(.)"] | unique | map({(.): true}) | add // {}
     '
 }
@@ -40,7 +40,7 @@ build_vpn_key_map() {
 clients_totals_line() {
     local json="$1"
     echo "$json" | jq -r '
-        ([.[] | .ips[]?.address] | unique | length) as $ips |
+        ([.[] | (.ips // [])[] | .address] | unique | length) as $ips |
         ([.[] | .sessions] | add // 0) as $sess |
         ([.[] | select(.sessions > 0)] | length) as $users |
         "VPN: \($ips) IP · \($sess) сесс. · \($users) юз."
@@ -91,11 +91,15 @@ format_geo_block() {
 send_message() {
     local chat_id="$1"
     local text="$2"
+    local decoded payload
+    decoded="${text//%0A/$'\n'}"
+    payload=$(jq -n \
+        --arg chat_id "$chat_id" \
+        --arg text "$decoded" \
+        '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}')
     curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
-        -d "chat_id=$chat_id" \
-        -d "text=$text" \
-        -d "parse_mode=Markdown" \
-        -d "disable_web_page_preview=true" >/dev/null
+        -H "Content-Type: application/json" \
+        -d "$payload" >/dev/null
 }
 
 format_traffic_clients() {
@@ -108,7 +112,7 @@ format_traffic_clients() {
     fi
 
     totals=$(clients_totals_line "$json")
-    local TEXT="📶 *Трафик по клиентам VPN*%0A_$totals_%0A_сесс. = активные VPN-туннели, не TCP-сокеты_"
+    local TEXT="📶 *Трафик по клиентам VPN*%0A${totals}%0A(сесс. = активные VPN-туннели, не TCP-сокеты)"
 
     while IFS= read -r block; do
         [[ -n "$block" ]] && TEXT+="%0A%0A$block"
@@ -136,7 +140,7 @@ format_traffic_clients() {
             else "∞" end) as $lim |
         $icon + " *" + .username + "* — " + (.sessions | tostring) + " сесс." +
         (if (.ips | length) > 0
-            then (.ips | map("%0A   🌐 `" + .address + "`%0A   🆔 " + .tag) | join(""))
+            then (.ips | map("%0A   🌐 `" + .address + "`%0A   🆔 `" + .tag + "`") | join(""))
             else "" end) +
         "%0A   ⬇️ " + $down + "  ⬆️ " + $up +
         "%0A   Σ *" + $sum + "* / " + $lim +
@@ -148,23 +152,25 @@ format_traffic_clients() {
 
 build_status_text() {
     local clients_json="$1"
-    local TEXT="" NOW tcp_ips tcp_count vpn_line
+    local TEXT="" NOW tcp_ips=() tcp_count vpn_line
 
     NOW=$(date +%s)
-    mapfile -t tcp_ips < <(get_lsof_tcp_ips)
+    while IFS= read -r ip; do
+        [[ -n "$ip" ]] && tcp_ips+=("$ip")
+    done < <(get_lsof_tcp_ips)
     tcp_count=${#tcp_ips[@]}
 
     if ! clients_json_valid "$clients_json"; then
         TEXT="⚠️ /clients недоступен.%0A%0AПроверьте \`[metrics]\` в vpn.toml и custom-сборку TrustTunnel."
         if [[ "$tcp_count" -gt 0 ]]; then
-            TEXT+="%0A%0A_TCP-сокетов (lsof): $tcp_count_"
+            TEXT+="%0A%0ATCP-сокетов (lsof): $tcp_count"
         fi
         echo "$TEXT"
         return
     fi
 
     vpn_line=$(clients_totals_line "$clients_json")
-    TEXT="📊 *Текущие подключения*%0A*$vpn_line*%0A_TCP-сокетов (lsof): $tcp_count_"
+    TEXT="📊 *Текущие подключения*%0A*${vpn_line}*%0ATCP-сокетов (lsof): $tcp_count"
 
     local grouped
     grouped=$(echo "$clients_json" | jq -c '
@@ -193,12 +199,12 @@ build_status_text() {
             ' "$ACTIVE_VPN_STATE" 2>/dev/null)
             [[ -z "$start" || "$start" == "null" ]] && start=$NOW
             dur=$(format_time $((NOW - start)))
-            TEXT+="%0A%0A🌐 \`$ip\` — *$dur*%0A🆔 $tag%0A👤 $users_line"
+            TEXT+="%0A%0A🌐 \`$ip\` — *$dur*%0A🆔 \`$tag\`%0A👤 $users_line"
         done
     fi
 
     local vpn_ips unmapped=""
-    vpn_ips=$(echo "$clients_json" | jq -r '[.[] | .ips[]?.address] | unique | .[]')
+    vpn_ips=$(echo "$clients_json" | jq -r '[.[] | (.ips // [])[] | .address] | unique | .[]')
     local ip
     for ip in "${tcp_ips[@]}"; do
         [[ -z "$ip" ]] && continue
@@ -209,7 +215,7 @@ build_status_text() {
 
     if [[ -n "$unmapped" ]]; then
         TEXT+="%0A%0A*—— TCP без VPN ——*"
-        TEXT+="%0A_(handshake / idle / не авторизован)_"
+        TEXT+="%0A(handshake / idle / не авторизован)"
         while IFS= read -r ip; do
             [[ -z "$ip" ]] && continue
             TEXT+=$(format_geo_block "$ip" "%0A")
