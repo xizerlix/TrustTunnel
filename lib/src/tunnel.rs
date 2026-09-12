@@ -196,6 +196,27 @@ impl Tunnel {
                             .map(|a| a.authenticate(&source, &self.id) == Status::Pass)
                             .unwrap_or(false);
                         if authenticated {
+                            if let Some(username) = decode_username(match &source {
+                                authentication::Source::ProxyBasic(s) => s.as_ref(),
+                                authentication::Source::Sni(s) => s.as_ref(),
+                            }) {
+                                if context.traffic_limiter.as_ref().is_some_and(|limiter| {
+                                    !limiter.is_allowed(&username)
+                                }) {
+                                    log_id!(
+                                        debug,
+                                        self.id,
+                                        "Traffic quota exceeded, closing tunnel"
+                                    );
+                                    request.fail_request(ConnectionError::Authentication(
+                                        "Traffic quota exceeded".to_string(),
+                                    ));
+                                    return Err(io::Error::new(
+                                        ErrorKind::PermissionDenied,
+                                        "Traffic quota exceeded",
+                                    ));
+                                }
+                            }
                             let creds = match &source {
                                 authentication::Source::ProxyBasic(s) => s.as_ref(),
                                 authentication::Source::Sni(s) => s.as_ref(),
@@ -296,6 +317,18 @@ impl Tunnel {
                         authentication::Source::Sni(s) => decode_username(s.as_ref()),
                     };
                     if let Some(u) = username_opt {
+                        if context
+                            .traffic_limiter
+                            .as_ref()
+                            .is_some_and(|limiter| !limiter.is_allowed(&u))
+                        {
+                            let err = ConnectionError::Authentication(
+                                "Traffic quota exceeded".to_string(),
+                            );
+                            log_id!(debug, request_id, "{}", err);
+                            request.fail_request(err);
+                            return;
+                        }
                         context.metrics.transfer_session_username(
                             protocol,
                             &log_id.to_string(),

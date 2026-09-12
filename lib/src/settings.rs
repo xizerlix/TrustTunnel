@@ -35,6 +35,8 @@ pub enum ValidationError {
     NoCredentialsOnPublicAddress,
     /// Invalid auth failure status code
     InvalidAuthFailureStatusCode(u16),
+    /// Traffic quotas are configured but `traffic_usage_file` is not set
+    TrafficUsageFileRequired,
 }
 
 impl Debug for ValidationError {
@@ -57,6 +59,10 @@ impl Debug for ValidationError {
                 f,
                 "Invalid auth_failure_status_code: {}. Supported values: 407, 405, 404, 403",
                 code
+            ),
+            Self::TrafficUsageFileRequired => write!(
+                f,
+                "traffic_usage_file must be set when traffic quotas are configured"
             ),
         }
     }
@@ -229,6 +235,17 @@ pub struct Settings {
     /// If absent, HTTP/3 connections are unlimited.
     #[serde(default)]
     pub(crate) default_max_http3_conns_per_client: Option<u32>,
+
+    /// Default maximum total traffic (inbound + outbound bytes) per client credentials.
+    /// Can be overridden per-client with `max_traffic_bytes` in the credentials file.
+    /// If absent, traffic is unlimited unless `traffic_usage_file` is configured for accounting only.
+    #[serde(default)]
+    pub(crate) default_max_traffic_bytes_per_client: Option<u64>,
+
+    /// Path to a file where per-client traffic usage counters are persisted.
+    /// Required when traffic quotas are configured.
+    #[serde(default)]
+    pub(crate) traffic_usage_file: Option<String>,
 
     /// Whether an instance was built through a [`SettingsBuilder`].
     /// This flag is a workaround for absence of the ability to validate
@@ -573,6 +590,15 @@ impl Settings {
             }
         }
 
+        let traffic_quotas_configured = self.default_max_traffic_bytes_per_client.is_some()
+            || self
+                .clients
+                .iter()
+                .any(|c| c.max_traffic_bytes.is_some());
+        if traffic_quotas_configured && self.traffic_usage_file.is_none() {
+            return Err(ValidationError::TrafficUsageFileRequired);
+        }
+
         Ok(())
     }
 
@@ -686,6 +712,8 @@ impl Default for Settings {
             speedtest_path: None,
             default_max_http2_conns_per_client: None,
             default_max_http3_conns_per_client: None,
+            default_max_traffic_bytes_per_client: None,
+            traffic_usage_file: None,
             auth_failure_status_code: Settings::default_auth_failure_status_code(),
             non_connect_auth_failure_status_code: None,
             built: false,
@@ -911,7 +939,7 @@ impl MetricsSettings {
     }
 
     pub fn default_per_client_metrics() -> bool {
-        false
+        true
     }
 }
 
@@ -952,6 +980,8 @@ impl SettingsBuilder {
                 speedtest_path: Settings::default_speedtest_path(),
                 default_max_http2_conns_per_client: None,
                 default_max_http3_conns_per_client: None,
+                default_max_traffic_bytes_per_client: None,
+                traffic_usage_file: None,
                 auth_failure_status_code: Settings::default_auth_failure_status_code(),
                 non_connect_auth_failure_status_code: None,
                 built: true,
@@ -1084,6 +1114,16 @@ impl SettingsBuilder {
     /// Set the default maximum HTTP/3 connections per client credentials
     pub fn default_max_http3_conns_per_client(mut self, x: Option<u32>) -> Self {
         self.settings.default_max_http3_conns_per_client = x;
+        self
+    }
+
+    pub fn default_max_traffic_bytes_per_client(mut self, x: Option<u64>) -> Self {
+        self.settings.default_max_traffic_bytes_per_client = x;
+        self
+    }
+
+    pub fn traffic_usage_file<S: Into<String>>(mut self, x: Option<S>) -> Self {
+        self.settings.traffic_usage_file = x.map(Into::into);
         self
     }
 
@@ -1629,11 +1669,17 @@ where
                 .and_then(Item::as_integer)
                 .and_then(|v| u32::try_from(v).ok());
 
+            let max_traffic_bytes = x
+                .get("max_traffic_bytes")
+                .and_then(Item::as_integer)
+                .and_then(|v| u64::try_from(v).ok());
+
             Ok(Client {
                 username,
                 password,
                 max_http2_conns,
                 max_http3_conns,
+                max_traffic_bytes,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

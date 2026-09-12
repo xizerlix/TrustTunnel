@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Traffic quotas on top of v1.1.0: `max_traffic_bytes` per client in
+  `credentials.toml`, optional `default_max_traffic_bytes_per_client` and
+  `traffic_usage_file` in `vpn.toml`. Clients over quota are blocked from new
+  VPN requests. `/clients` includes `ips[]` (with `#ip_*` tags), `total`,
+  `limit`, and `quota_exceeded`.
+- In this fork, `per_client_metrics` defaults to `true` so existing `vpn.toml`
+  with `[metrics]` keeps serving `/clients` without extra flags.
+
 ### Changed
 
 ### Deprecated

@@ -31,6 +31,7 @@ vpn-libs-endpoint/
 ├── lib/                       # Core library crate (`trusttunnel`)
 │   ├── src/                   # Protocol logic, codecs, forwarders, settings
 │   │   └── authentication/    # Authentication module
+│   │   └── traffic_limiter.rs # Optional per-user traffic quotas
 │   └── tests/                 # Integration tests (tunnel, auth, ping, speedtest, reverse proxy)
 │       └── common/            # Shared test helpers and fixtures
 ├── endpoint/                  # Binary crate (`trusttunnel_endpoint`)

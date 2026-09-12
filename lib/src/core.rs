@@ -15,6 +15,7 @@ use crate::shutdown::Shutdown;
 use crate::socks5_forwarder::Socks5Forwarder;
 use crate::tls_demultiplexer::TlsDemux;
 use crate::tls_listener::{TlsAcceptor, TlsListener};
+use crate::traffic_limiter::TrafficLimiter;
 use crate::tunnel::Tunnel;
 use crate::{
     authentication, http_ping_handler, http_speedtest_handler, log_id, log_utils, metrics,
@@ -23,6 +24,7 @@ use crate::{
 use socket2::{Domain, Protocol as SockProtocol, SockRef, Socket, Type};
 use std::io;
 use std::io::ErrorKind;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -83,6 +85,7 @@ pub(crate) struct Context {
     next_client_id: Arc<AtomicU64>,
     next_tunnel_id: Arc<AtomicU64>,
     pub connection_limiter: Option<Arc<ConnectionLimiter>>,
+    pub traffic_limiter: Option<Arc<TrafficLimiter>>,
 }
 
 impl Context {
@@ -134,6 +137,22 @@ impl Core {
             None
         };
 
+        let traffic_limiter = if settings.default_max_traffic_bytes_per_client.is_some()
+            || settings.traffic_usage_file.is_some()
+            || settings
+                .clients
+                .iter()
+                .any(|c| c.max_traffic_bytes.is_some())
+        {
+            Some(TrafficLimiter::new(
+                &settings.clients,
+                settings.default_max_traffic_bytes_per_client,
+                settings.traffic_usage_file.as_ref().map(PathBuf::from),
+            ))
+        } else {
+            None
+        };
+
         let per_client_metrics = settings
             .metrics
             .as_ref()
@@ -155,11 +174,12 @@ impl Core {
                 },
                 shutdown,
                 fatal_error,
-                metrics: Metrics::new(per_client_metrics)
+                metrics: Metrics::new(per_client_metrics, traffic_limiter.clone())
                     .map_err(|e| Error::Metrics(e.to_string()))?,
                 next_client_id: Default::default(),
                 next_tunnel_id: Default::default(),
                 connection_limiter,
+                traffic_limiter,
             }),
         })
     }
@@ -726,6 +746,20 @@ impl Core {
                     let auth = authentication::Source::Sni(credentials.into());
                     match authenticator.authenticate(&auth, &tunnel_id) {
                         authentication::Status::Pass => {
+                            if let Some(username) = authenticator.username(&auth) {
+                                if context
+                                    .traffic_limiter
+                                    .as_ref()
+                                    .is_some_and(|limiter| !limiter.is_allowed(&username))
+                                {
+                                    log_id!(
+                                        debug,
+                                        tunnel_id,
+                                        "Traffic quota exceeded for SNI-authenticated client"
+                                    );
+                                    return;
+                                }
+                            }
                             let guard = context.connection_limiter.as_ref().and_then(|limiter| {
                                 let creds = match &auth {
                                     authentication::Source::Sni(s) => s.as_ref(),
@@ -810,10 +844,11 @@ impl Default for Context {
             icmp_forwarder: None,
             shutdown: Shutdown::new(),
             fatal_error,
-            metrics: Metrics::new(false).unwrap(),
+            metrics: Metrics::new(false, None).unwrap(),
             next_client_id: Default::default(),
             next_tunnel_id: Default::default(),
             connection_limiter: None,
+            traffic_limiter: None,
         }
     }
 }

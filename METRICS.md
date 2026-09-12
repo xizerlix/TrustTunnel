@@ -92,19 +92,32 @@ otherwise it returns `404 Not Found`.
 Example response:
 
 ```json
-[{"username":"alice","ip":"1.2.3.4","sessions":3,"inbound":123456,"outbound":789012},
- {"username":"bob","ip":null,"sessions":0,"inbound":0,"outbound":0}]
+[
+  {
+    "username": "alice",
+    "ip": "1.2.3.4",
+    "ips": [
+      { "address": "1.2.3.4", "tag": "#ip_1_2_3_4" }
+    ],
+    "sessions": 3,
+    "inbound": 123456,
+    "outbound": 789012,
+    "total": 912468,
+    "limit": 10737418240,
+    "quota_exceeded": false
+  }
+]
 ```
 
 Notes:
 
-- The `/clients` endpoint includes both configured clients (from settings) and
-  active runtime connections. Configured clients with no active sessions are
-  present with zero counters, so the monitoring system can track unused users.
-- `inbound`/`outbound` are lifetime totals per user; `sessions` is the current
-  number of active sessions; `ip` is a client IP observed for this user (one is
-  chosen arbitrarily when the user connects from multiple addresses) and may be
-  `null` (e.g. HTTP/3 connections where the peer address could not be resolved).
+- `ips` lists all distinct client addresses currently seen for the user. `ip` is
+  the first of those addresses (upstream-compatible).
+- In this implementation `inbound` is download (internet → client) and
+  `outbound` is upload (client → internet). `total` is their sum.
+- `limit` is omitted/`null` when unlimited. `quota_exceeded` is `true` when
+  `total >= limit`.
+- Traffic counters from `traffic_usage_file` survive restarts.
 
 ### `/health-check`
 

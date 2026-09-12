@@ -1,11 +1,12 @@
 use crate::http1_codec::Http1Codec;
 use crate::http_codec::HttpCodec;
 use crate::tls_demultiplexer::Protocol;
+use crate::traffic_limiter::{TrafficDirection, TrafficLimiter};
 use crate::{core, http_codec, log_id, log_utils};
 use bytes::Bytes;
 use prometheus::Encoder;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +30,7 @@ pub(crate) struct Metrics {
     outbound_tcp_sockets: prometheus::IntGauge,
     outbound_udp_sockets: prometheus::IntGauge,
     clients: Mutex<HashMap<String, ClientInfo>>,
+    traffic_limiter: Option<Arc<TrafficLimiter>>,
 }
 
 #[derive(Debug, Default)]
@@ -38,13 +40,25 @@ struct ClientInfo {
     sessions: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq, Eq)]
+struct ClientIpEntry {
+    address: String,
+    tag: String,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
 struct ClientSummary {
     username: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ip: Option<String>,
+    ips: Vec<ClientIpEntry>,
     sessions: u64,
     inbound: u64,
     outbound: u64,
+    total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<u64>,
+    quota_exceeded: bool,
 }
 
 pub(crate) struct ClientSessionsCounter {
@@ -62,7 +76,7 @@ pub(crate) struct OutboundUdpSocketCounter {
 }
 
 impl Metrics {
-    pub fn new(per_client: bool) -> io::Result<Arc<Self>> {
+    pub fn new(per_client: bool, traffic_limiter: Option<Arc<TrafficLimiter>>) -> io::Result<Arc<Self>> {
         let registry = prometheus::Registry::new();
         Ok(Arc::new(Self {
             per_client,
@@ -122,6 +136,7 @@ impl Metrics {
             .map_err(prometheus_to_io_error)?,
             _registry: registry,
             clients: Mutex::new(HashMap::new()),
+            traffic_limiter,
         }))
     }
 
@@ -157,6 +172,11 @@ impl Metrics {
                     .inc_by(n as u64);
             }
         }
+        if let Some(username) = username.filter(|u| !u.is_empty()) {
+            if let Some(limiter) = self.traffic_limiter.as_ref() {
+                limiter.record(username, TrafficDirection::Inbound, n);
+            }
+        }
     }
 
     pub fn add_outbound_bytes(&self, protocol: Protocol, username: Option<&str>, n: usize) {
@@ -168,6 +188,11 @@ impl Metrics {
                 self.outbound_traffic_per_user
                     .with_label_values(&[username])
                     .inc_by(n as u64);
+            }
+        }
+        if let Some(username) = username.filter(|u| !u.is_empty()) {
+            if let Some(limiter) = self.traffic_limiter.as_ref() {
+                limiter.record(username, TrafficDirection::Outbound, n);
             }
         }
     }
@@ -239,36 +264,70 @@ impl Metrics {
     /// Aggregate per-user summaries: configured clients (shown even when idle) merged
     /// with runtime connections and lifetime traffic totals from the per-user counters.
     fn clients_summary(&self, configured_usernames: &[String]) -> Vec<ClientSummary> {
-        let mut agg: HashMap<String, ClientSummary> = HashMap::new();
-
-        for uname in configured_usernames {
-            agg.entry(uname.clone()).or_insert(ClientSummary {
-                username: uname.clone(),
-                ip: None,
-                sessions: 0,
-                inbound: 0,
-                outbound: 0,
-            });
+        struct AggEntry {
+            sessions: u64,
+            inbound: u64,
+            outbound: u64,
+            ips: BTreeSet<String>,
         }
-
-        if let Ok(clients_map) = self.clients.lock() {
-            for (_id, info) in clients_map.iter() {
-                let uname = info.username.clone().unwrap_or_default();
-                let entry = agg.entry(uname.clone()).or_insert(ClientSummary {
-                    username: uname.clone(),
-                    ip: info.ip.map(|x| x.to_string()),
+        impl Default for AggEntry {
+            fn default() -> Self {
+                Self {
                     sessions: 0,
                     inbound: 0,
                     outbound: 0,
-                });
-                entry.sessions = entry.sessions.saturating_add(info.sessions);
-                if entry.ip.is_none() {
-                    entry.ip = info.ip.map(|x| x.to_string());
+                    ips: BTreeSet::new(),
                 }
             }
         }
 
-        let mut summaries: Vec<ClientSummary> = agg.into_values().collect();
+        let mut agg: HashMap<String, AggEntry> = HashMap::new();
+
+        for uname in configured_usernames {
+            if !uname.is_empty() {
+                agg.entry(uname.clone()).or_default();
+            }
+        }
+
+        if let Ok(clients_map) = self.clients.lock() {
+            for info in clients_map.values() {
+                let uname = info.username.clone().unwrap_or_default();
+                if uname.is_empty() {
+                    continue;
+                }
+                let entry = agg.entry(uname).or_default();
+                entry.sessions = entry.sessions.saturating_add(info.sessions);
+                if let Some(ip) = info.ip {
+                    entry.ips.insert(ip.to_string());
+                }
+            }
+        }
+
+        let mut summaries: Vec<ClientSummary> = agg
+            .into_iter()
+            .map(|(username, entry)| {
+                let ips: Vec<ClientIpEntry> = entry
+                    .ips
+                    .into_iter()
+                    .map(|address| ClientIpEntry {
+                        tag: ip_hashtag(&address),
+                        address,
+                    })
+                    .collect();
+                ClientSummary {
+                    ip: ips.first().map(|x| x.address.clone()),
+                    username,
+                    ips,
+                    sessions: entry.sessions,
+                    inbound: 0,
+                    outbound: 0,
+                    total: 0,
+                    limit: None,
+                    quota_exceeded: false,
+                }
+            })
+            .collect();
+
         if self.per_client {
             for summary in &mut summaries {
                 summary.inbound = self
@@ -283,8 +342,27 @@ impl Metrics {
                     .unwrap_or(0);
             }
         }
+
+        if let Some(limiter) = self.traffic_limiter.as_ref() {
+            for summary in &mut summaries {
+                let persisted = limiter.summary(&summary.username);
+                summary.inbound = summary.inbound.max(persisted.inbound);
+                summary.outbound = summary.outbound.max(persisted.outbound);
+                summary.limit = persisted.limit;
+                summary.quota_exceeded = persisted.quota_exceeded;
+            }
+        }
+
+        for summary in &mut summaries {
+            summary.total = summary.inbound.saturating_add(summary.outbound);
+        }
+        summaries.sort_by(|a, b| a.username.cmp(&b.username));
         summaries
     }
+}
+
+fn ip_hashtag(address: &str) -> String {
+    format!("#ip_{}", address.replace('.', "_").replace(':', "_"))
 }
 
 impl ClientSessionsCounter {
@@ -582,7 +660,7 @@ mod tests {
     use super::*;
 
     fn metrics(per_client: bool) -> Arc<Metrics> {
-        Metrics::new(per_client).unwrap()
+        Metrics::new(per_client, None).unwrap()
     }
 
     fn output(metrics: &Metrics) -> String {
@@ -706,6 +784,9 @@ mod tests {
         assert_eq!(alice.inbound, 42);
         assert_eq!(alice.outbound, 7);
         assert_eq!(alice.ip.as_deref(), Some("127.0.0.1"));
+        assert_eq!(alice.ips.len(), 1);
+        assert_eq!(alice.ips[0].tag, "#ip_127_0_0_1");
+        assert_eq!(alice.total, 49);
 
         let bob = summaries.iter().find(|s| s.username == "bob").unwrap();
         assert_eq!(bob.sessions, 0);

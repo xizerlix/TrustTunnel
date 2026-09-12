@@ -401,14 +401,31 @@ Optional. Enables Prometheus-compatible metrics endpoint.
 [metrics]
 address = "127.0.0.1:1987"
 request_timeout_secs = 3
-per_client_metrics = false
+per_client_metrics = true
 ```
 
 | Setting | Type | Default | Description |
 | ------- | ---- | ------- | ----------- |
 | `address` | String | `127.0.0.1:1987` | Metrics endpoint address |
 | `request_timeout_secs` | Integer | `3` | Request timeout in seconds |
-| `per_client_metrics` | Boolean | `false` | Expose per-user metric series and the `/clients` endpoint labelled with the authenticated username. Exposes usernames and client IPs on the metrics listener. |
+| `per_client_metrics` | Boolean | `true` in this fork (`false` upstream) | Expose per-user metric series and `/clients` |
+
+### Traffic Quotas
+
+Optional. Limits total traffic per VPN user (upload + download combined).
+Counters persist to `traffic_usage_file` and survive endpoint restarts.
+
+```toml
+default_max_traffic_bytes_per_client = 10737418240
+traffic_usage_file = "traffic_usage.toml"
+```
+
+| Setting | Type | Default | Description |
+| ------- | ---- | ------- | ----------- |
+| `default_max_traffic_bytes_per_client` | Integer | unlimited | Default quota in bytes for all clients |
+| `traffic_usage_file` | String | - | **Required** when any traffic quota is configured |
+
+Per-client override: `max_traffic_bytes` in `credentials.toml`.
 
 ---
 
