@@ -43,6 +43,7 @@ smallvec = "1.10.0"
 socket2 = "0.5"
 tokio = { version = "1.42", features = ["net", "rt", "sync", "time", "macros", "rt-multi-thread"] }
 tokio-rustls = "0.26"
+toml = "0.8"
 toml_edit = "0.19.10"
 boring = "4"
 trusttunnel-deeplink = { path = "../deeplink" }
