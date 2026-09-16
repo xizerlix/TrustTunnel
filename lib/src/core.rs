@@ -285,11 +285,19 @@ impl Core {
         info!("Listening to TCP {}", settings.listen_address);
 
         let tls_listener = Arc::new(TlsListener::new());
-        // Per-IP / global caps apply only to *new* TCP accepts, not to already
-        // established sessions. Values must absorb a full client reconnect burst
-        // after endpoint restart (many HTTP/2 sessions per device).
-        let accept_limiter = AcceptLimiter::new(128, 512);
-        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(32));
+        let limit_inbound_handshakes = settings.limit_inbound_handshakes;
+        let handshake_limit = settings.max_concurrent_inbound_handshakes.max(1) as usize;
+        if limit_inbound_handshakes {
+            info!(
+                "Inbound handshake limits enabled (128 accepts/s per IP, 512/s global, {} concurrent TLS)",
+                handshake_limit
+            );
+        } else {
+            info!("Inbound handshake limits disabled");
+        }
+        let accept_limiter = limit_inbound_handshakes.then(|| AcceptLimiter::new(128, 512));
+        let handshake_slots =
+            limit_inbound_handshakes.then(|| Arc::new(tokio::sync::Semaphore::new(handshake_limit)));
         loop {
             let client_id = log_utils::IdChain::from(log_utils::IdItem::new(
                 log_utils::CLIENT_ID_FMT,
@@ -305,7 +313,10 @@ impl Core {
                 Ok((s, a))
             }) {
                 Ok((stream, addr)) => {
-                    if !accept_limiter.allow(addr.ip()) {
+                    if accept_limiter
+                        .as_ref()
+                        .is_some_and(|limiter| !limiter.allow(addr.ip()))
+                    {
                         log_id!(
                             warn,
                             client_id,
@@ -333,8 +344,13 @@ impl Core {
                 let tls_listener = tls_listener.clone();
                 let handshake_slots = handshake_slots.clone();
                 async move {
-                    let Ok(_permit) = handshake_slots.acquire_owned().await else {
-                        return;
+                    let _permit = if let Some(slots) = handshake_slots.as_ref() {
+                        match slots.clone().acquire_owned().await {
+                            Ok(permit) => Some(permit),
+                            Err(_) => return,
+                        }
+                    } else {
+                        None
                     };
                     log_id!(trace, client_id, "Starting TLS handshake");
                     let handshake_timeout = context.settings.tls_handshake_timeout;

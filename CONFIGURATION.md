@@ -123,6 +123,12 @@ allow_private_network_connections = false
 # Timeout of an incoming TLS handshake (seconds)
 tls_handshake_timeout_secs = 10
 
+# Cap new TCP accepts and concurrent TLS sessions. Disable when several
+# devices share one public IP (home NAT) and reconnects stall.
+limit_inbound_handshakes = true
+# Used only when limit_inbound_handshakes = true. Default 32.
+max_concurrent_inbound_handshakes = 32
+
 # Timeout of a client listener (seconds)
 client_listener_timeout_secs = 600
 
@@ -273,6 +279,8 @@ action = "deny"
 | `ipv6_available`                        | Boolean | `true`        | Whether IPv6 connections can be routed                           |
 | `allow_private_network_connections`     | Boolean | `false`       | Allow connections to endpoint's private network                  |
 | `tls_handshake_timeout_secs`            | Integer | `10`          | TLS handshake timeout in seconds                                 |
+| `limit_inbound_handshakes`              | Boolean | `true`        | Cap new TCP accepts and concurrent TLS sessions                  |
+| `max_concurrent_inbound_handshakes`     | Integer | `32`          | Concurrent TLS cap; used only if `limit_inbound_handshakes`      |
 | `client_listener_timeout_secs`          | Integer | `600`         | Client listener timeout in seconds (10 minutes)                  |
 | `connection_establishment_timeout_secs` | Integer | `30`          | Outgoing connection timeout in seconds                           |
 | `tcp_connections_timeout_secs`          | Integer | `604800`      | Idle TCP connection timeout (1 week)                             |
@@ -290,6 +298,11 @@ Ping and speedtest are matched only via their configured paths. Default paths ar
 `auth_failure_status_code` and `non_connect_auth_failure_status_code` accept `407`, `405`, `404`, or `403`.
 If `non_connect_auth_failure_status_code` is not set, it falls back to `auth_failure_status_code`.
 Warning: using a value other than `407` for `auth_failure_status_code` breaks proxy authentication in Chrome.
+
+`limit_inbound_handshakes`, `max_concurrent_inbound_handshakes`,
+`default_max_http2_conns_per_client`, and `default_max_http3_conns_per_client`
+are top-level keys in `vpn.toml`. They do not go under `[metrics]` or
+`[listen_protocols]`.
 
 ### Listen Protocol Settings
 

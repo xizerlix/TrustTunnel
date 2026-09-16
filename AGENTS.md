@@ -188,9 +188,15 @@ protocol/deep-link format, library API) when relevant.
    **Rationale**: catches common mistakes and enforces idiomatic Rust.
 
 3. Keep binary names and CLI flags descriptive. New TOML config keys MUST use
-   `snake_case` to match existing configuration style.
+   `snake_case` to match existing configuration style. Inbound TCP accept and
+   TLS handshake rate limits MUST be gated by `limit_inbound_handshakes`, with
+   the concurrent cap in `max_concurrent_inbound_handshakes` (default 32), so
+   operators behind shared NAT can turn them off or raise them without a rebuild.
 
-   **Rationale**: consistency with the existing config surface.
+   **Rationale**: consistency with the existing config surface. Several
+   TrustTunnel clients behind one public IP share a source address and each
+   opens multiple HTTP/2 sessions, so a global per-IP handshake cap can stall
+   legitimate household reconnects.
 
 4. Markdown files MUST pass `markdownlint` (configured in
    `.markdownlint.json`). Run `make lint-md` before submitting docs.

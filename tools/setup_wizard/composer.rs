@@ -31,6 +31,9 @@ fn compose_main_table(settings: &Settings, credentials_path: &str, rules_path: &
         value(*settings.get_allow_private_network_connections());
     doc["tls_handshake_timeout_secs"] =
         value(settings.get_tls_handshake_timeout().as_secs() as i64);
+    doc["limit_inbound_handshakes"] = value(*settings.get_limit_inbound_handshakes());
+    doc["max_concurrent_inbound_handshakes"] =
+        value(*settings.get_max_concurrent_inbound_handshakes() as i64);
     doc["client_listener_timeout_secs"] =
         value(settings.get_client_listener_timeout().as_secs() as i64);
     doc["connection_establishment_timeout_secs"] =

@@ -54,6 +54,12 @@ allow_private_network_connections = {}
 tls_handshake_timeout_secs = {}
 
 {}
+limit_inbound_handshakes = {}
+
+{}
+max_concurrent_inbound_handshakes = {}
+
+{}
 client_listener_timeout_secs = {}
 
 {}
@@ -89,6 +95,10 @@ auth_failure_status_code = {}
         Settings::default_allow_private_network_connections(),
         format!("{}. In seconds.", Settings::doc_tls_handshake_timeout()).to_toml_comment(),
         Settings::default_tls_handshake_timeout().as_secs(),
+        Settings::doc_limit_inbound_handshakes().to_toml_comment(),
+        Settings::default_limit_inbound_handshakes(),
+        Settings::doc_max_concurrent_inbound_handshakes().to_toml_comment(),
+        Settings::default_max_concurrent_inbound_handshakes(),
         format!("{}. In seconds.", Settings::doc_client_listener_timeout()).to_toml_comment(),
         Settings::default_client_listener_timeout().as_secs(),
         format!(

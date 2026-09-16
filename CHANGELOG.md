@@ -13,8 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `traffic_usage_file` in `vpn.toml`. Clients over quota are blocked from new
   VPN requests. `/clients` includes `ips[]` (with `#ip_*` tags), `total`,
   `limit`, and `quota_exceeded`.
-- In this fork, `per_client_metrics` defaults to `true` so existing `vpn.toml`
-  with `[metrics]` keeps serving `/clients` without extra flags.
+- [Feature] `limit_inbound_handshakes` in `vpn.toml` (default `true`) toggles
+  the TCP accept / concurrent TLS caps. When enabled,
+  `max_concurrent_inbound_handshakes` (default `32`) sets the concurrent TLS
+  session cap. Set `limit_inbound_handshakes = false` when several clients
+  share one NAT IP and reconnects stall.
 
 ### Changed
 

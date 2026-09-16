@@ -104,6 +104,18 @@ pub struct Settings {
         serialize_with = "serialize_duration_secs"
     )]
     pub(crate) tls_handshake_timeout: Duration,
+    /// Cap new TCP accepts (128/s per IP, 512/s global) and concurrent TLS
+    /// sessions counted toward `max_concurrent_inbound_handshakes`. Clients
+    /// behind the same NAT share one source IP; set `false` if reconnects stall.
+    /// If absent, limits are enabled.
+    #[serde(default = "Settings::default_limit_inbound_handshakes")]
+    pub(crate) limit_inbound_handshakes: bool,
+    /// Maximum concurrent inbound TLS sessions when `limit_inbound_handshakes`
+    /// is true. On this fork a slot is held for the life of the TCP connection,
+    /// not only the handshake. Default 32. Ignored when limits are disabled.
+    /// Values below 1 are treated as 1.
+    #[serde(default = "Settings::default_max_concurrent_inbound_handshakes")]
+    pub(crate) max_concurrent_inbound_handshakes: u32,
     /// Timeout of a client listener
     #[serde(default = "Settings::default_client_listener_timeout")]
     #[serde(rename = "client_listener_timeout_secs")]
@@ -614,6 +626,14 @@ impl Settings {
         false
     }
 
+    pub fn default_limit_inbound_handshakes() -> bool {
+        true
+    }
+
+    pub fn default_max_concurrent_inbound_handshakes() -> u32 {
+        32
+    }
+
     pub fn default_tls_handshake_timeout() -> Duration {
         Duration::from_secs(10)
     }
@@ -691,6 +711,9 @@ impl Default for Settings {
             ipv6_available: false,
             allow_private_network_connections: true,
             tls_handshake_timeout: Settings::default_tls_handshake_timeout(),
+            limit_inbound_handshakes: Settings::default_limit_inbound_handshakes(),
+            max_concurrent_inbound_handshakes:
+                Settings::default_max_concurrent_inbound_handshakes(),
             client_listener_timeout: Settings::default_client_listener_timeout(),
             connection_establishment_timeout: Settings::default_connection_establishment_timeout(),
             tcp_connections_timeout: Settings::default_tcp_connections_timeout(),
@@ -962,6 +985,9 @@ impl SettingsBuilder {
                 allow_private_network_connections:
                     Settings::default_allow_private_network_connections(),
                 tls_handshake_timeout: Settings::default_tls_handshake_timeout(),
+                limit_inbound_handshakes: Settings::default_limit_inbound_handshakes(),
+                max_concurrent_inbound_handshakes:
+                    Settings::default_max_concurrent_inbound_handshakes(),
                 client_listener_timeout: Settings::default_client_listener_timeout(),
                 connection_establishment_timeout:
                     Settings::default_connection_establishment_timeout(),
@@ -1102,6 +1128,18 @@ impl SettingsBuilder {
     /// Set whether speedtest is available
     pub fn speedtest_enable(mut self, x: bool) -> Self {
         self.settings.speedtest_enable = x;
+        self
+    }
+
+    /// Enable or disable inbound TCP accept / TLS handshake rate limits.
+    pub fn limit_inbound_handshakes(mut self, x: bool) -> Self {
+        self.settings.limit_inbound_handshakes = x;
+        self
+    }
+
+    /// Set the concurrent inbound TLS cap used when handshake limits are on.
+    pub fn max_concurrent_inbound_handshakes(mut self, x: u32) -> Self {
+        self.settings.max_concurrent_inbound_handshakes = x;
         self
     }
 
@@ -1774,6 +1812,33 @@ mod tests {
     fn default_auth_failure_status_code_is_407() {
         let settings = Settings::default();
         assert_eq!(settings.auth_failure_status_code, 407);
+    }
+
+    #[test]
+    fn limit_inbound_handshakes_defaults_to_true() {
+        let settings: Settings = toml::from_str("[listen_protocols]\n").unwrap();
+        assert!(settings.limit_inbound_handshakes);
+        assert_eq!(settings.max_concurrent_inbound_handshakes, 32);
+    }
+
+    #[test]
+    fn limit_inbound_handshakes_can_be_disabled() {
+        let settings: Settings = toml::from_str(
+            "limit_inbound_handshakes = false\n[listen_protocols]\n",
+        )
+        .unwrap();
+        assert!(!settings.limit_inbound_handshakes);
+        assert_eq!(settings.max_concurrent_inbound_handshakes, 32);
+    }
+
+    #[test]
+    fn max_concurrent_inbound_handshakes_can_be_set() {
+        let settings: Settings = toml::from_str(
+            "limit_inbound_handshakes = true\nmax_concurrent_inbound_handshakes = 64\n[listen_protocols]\n",
+        )
+        .unwrap();
+        assert!(settings.limit_inbound_handshakes);
+        assert_eq!(settings.max_concurrent_inbound_handshakes, 64);
     }
 
     #[test]
