@@ -104,7 +104,7 @@ fn main() {
                 .long("jobs")
                 .action(clap::ArgAction::Set)
                 .value_parser(clap::value_parser!(usize))
-                .help("The number of worker threads. If not specified, set to the number of CPUs on the machine."),
+                .help("The number of worker threads. If not specified, at least 2 (so TLS crypto cannot stall existing tunnels on a 1-CPU host)."),
             clap::Arg::new(SETTINGS_PARAM_NAME)
                 .action(clap::ArgAction::Set)
                 .required_unless_present(VERSION_PARAM_NAME)
@@ -490,6 +490,13 @@ fn main() {
 
         if let Some(n) = args.get_one::<usize>(THREADS_NUM_PARAM_NAME) {
             builder.worker_threads(*n);
+        } else {
+            let n = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .max(2);
+            info!("Tokio worker threads: {}", n);
+            builder.worker_threads(n);
         }
 
         builder.build().expect("Failed to set up runtime")

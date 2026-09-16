@@ -647,7 +647,7 @@ impl Settings {
     }
 
     pub fn default_tcp_connections_timeout() -> Duration {
-        Duration::from_secs(604800) // 1 week (match client tcpip module)
+        Duration::from_secs(2 * 60 * 60) // 2 hours; idle NAT sockets must not eat connection slots all week
     }
 
     pub fn default_udp_connections_timeout() -> Duration {

@@ -3,18 +3,19 @@ use crate::tls_demultiplexer::Protocol;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, RwLock};
 
 struct ClientEntry {
     max_http2: Option<u32>,
     max_http3: Option<u32>,
-    http2_count: u32,
-    http3_count: u32,
+    http2_count: AtomicU32,
+    http3_count: AtomicU32,
 }
 
 /// Tracks active connections per client credentials and enforces per-client limits.
 pub(crate) struct ConnectionLimiter {
-    clients: Mutex<HashMap<String, ClientEntry>>,
+    clients: RwLock<HashMap<String, ClientEntry>>,
     default_max_http2: Option<u32>,
     default_max_http3: Option<u32>,
 }
@@ -52,15 +53,15 @@ impl ConnectionLimiter {
                     ClientEntry {
                         max_http2: c.max_http2_conns,
                         max_http3: c.max_http3_conns,
-                        http2_count: 0,
-                        http3_count: 0,
+                        http2_count: AtomicU32::new(0),
+                        http3_count: AtomicU32::new(0),
                     },
                 )
             })
             .collect();
 
         Self {
-            clients: Mutex::new(map),
+            clients: RwLock::new(map),
             default_max_http2,
             default_max_http3,
         }
@@ -76,28 +77,32 @@ impl ConnectionLimiter {
         creds: &str,
         protocol: Protocol,
     ) -> Option<ConnectionGuard> {
-        let mut clients = self.clients.lock().unwrap();
-
-        let entry = clients.get_mut(creds)?;
-
+        let clients = self.clients.read().ok()?;
+        let entry = clients.get(creds)?;
         let (current, limit) = match protocol {
             Protocol::Http1 | Protocol::Http2 => {
-                let limit = entry.max_http2.or(self.default_max_http2);
-                (&mut entry.http2_count, limit)
+                (&entry.http2_count, entry.max_http2.or(self.default_max_http2))
             }
             Protocol::Http3 => {
-                let limit = entry.max_http3.or(self.default_max_http3);
-                (&mut entry.http3_count, limit)
+                (&entry.http3_count, entry.max_http3.or(self.default_max_http3))
             }
         };
 
         if let Some(max) = limit {
-            if *current >= max {
+            let prev = current.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |cur| {
+                if cur >= max {
+                    None
+                } else {
+                    Some(cur + 1)
+                }
+            });
+            if prev.is_err() {
                 return None;
             }
+        } else {
+            current.fetch_add(1, Ordering::Relaxed);
         }
 
-        *current += 1;
         Some(ConnectionGuard {
             limiter: self.clone(),
             creds: creds.to_owned(),
@@ -106,17 +111,19 @@ impl ConnectionLimiter {
     }
 
     fn release(&self, creds: &str, protocol: Protocol) {
-        let mut clients = self.clients.lock().unwrap();
-        if let Some(entry) = clients.get_mut(creds) {
-            match protocol {
-                Protocol::Http1 | Protocol::Http2 => {
-                    entry.http2_count = entry.http2_count.saturating_sub(1);
-                }
-                Protocol::Http3 => {
-                    entry.http3_count = entry.http3_count.saturating_sub(1);
-                }
-            }
-        }
+        let Ok(clients) = self.clients.read() else {
+            return;
+        };
+        let Some(entry) = clients.get(creds) else {
+            return;
+        };
+        let counter = match protocol {
+            Protocol::Http1 | Protocol::Http2 => &entry.http2_count,
+            Protocol::Http3 => &entry.http3_count,
+        };
+        let _ = counter.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |cur| {
+            Some(cur.saturating_sub(1))
+        });
     }
 }
 

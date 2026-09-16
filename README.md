@@ -31,6 +31,7 @@
         - [Updating the client](#updating-the-client)
         - [Client configuration wizard](#client-configuration-wizard)
         - [Running client](#running-client)
+- [Configuration flags](#configuration-flags)
 - [Clients](#clients)
 - [See also](#see-also)
 - [Roadmap](#roadmap)
@@ -431,6 +432,93 @@ trusttunnel_client.exe -c trusttunnel_client.toml
 ```
 
 Administrator privileges are required to set up routes and the TUN interface.
+
+## Configuration flags
+
+Full field-by-field reference (timeouts, HTTP/2, QUIC, reverse proxy, ICMP,
+TLS hosts, rules): [CONFIGURATION.md](CONFIGURATION.md).
+
+This fork adds handshake, session, quota, and `/clients` flags. They are
+**top-level** keys in `vpn.toml` (not under `[metrics]` or
+`[listen_protocols]`), except `per_client_metrics` which is inside
+`[metrics]`.
+
+### `vpn.toml` (top-level)
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `listen_address` | string | `0.0.0.0:443` | Listen address |
+| `ipv6_available` | bool | `true` | Route IPv6 |
+| `allow_private_network_connections` | bool | `false` | Tunneled access to the endpoint LAN |
+| `tls_handshake_timeout_secs` | int | `10` | Incoming TLS handshake timeout |
+| `limit_inbound_handshakes` | bool | `true` | Cap new TCP accepts and concurrent TLS sessions. Set `false` behind home NAT |
+| `max_concurrent_inbound_handshakes` | int | `32` | Used only if `limit_inbound_handshakes = true`. Slot is held for the TCP lifetime |
+| `client_listener_timeout_secs` | int | `600` | Idle client listener timeout (HTTP/2 session with no new request) |
+| `connection_establishment_timeout_secs` | int | `30` | Outbound connect timeout |
+| `tcp_connections_timeout_secs` | int | `604800` | Idle tunneled TCP (1 week). Lower (e.g. `300`) to drop dead NAT sockets |
+| `udp_connections_timeout_secs` | int | `300` | Tunneled UDP idle |
+| `credentials_file` | string | - | Path to `credentials.toml` |
+| `rules_file` | string | - | Optional rules file |
+| `speedtest_enable` | bool | `false` | Speedtest on main hosts |
+| `ping_enable` | bool | `false` | Ping on main hosts |
+| `ping_path` | string | `/ping` | Ping path prefix |
+| `speedtest_path` | string | `/speedtest` | Speedtest path prefix |
+| `auth_failure_status_code` | int | `407` | CONNECT auth failure (`407`/`405`/`404`/`403`) |
+| `non_connect_auth_failure_status_code` | int | same as above | Non-CONNECT auth failure |
+| `default_max_http2_conns_per_client` | int | unlimited | Per-user HTTP/1+HTTP/2 sessions. Clients open 8 HTTP/2 each; use `8 * devices` |
+| `default_max_http3_conns_per_client` | int | unlimited | Per-user HTTP/3 sessions (clients open 1 by default) |
+| `default_max_traffic_bytes_per_client` | int | unlimited | Per-user traffic quota (upload+download bytes) |
+| `traffic_usage_file` | string | - | Persist quotas; **required** if any quota is set |
+
+When `limit_inbound_handshakes = true`, accept rate is also capped at 128/s
+per source IP and 512/s global (not separately configurable).
+
+Inbound and outbound TCP sockets always use keepalive (idle 60s, probe 15s).
+That is not a `vpn.toml` flag.
+
+Tables `[listen_protocols]`, `[forward_protocol]`, `[reverse_proxy]`,
+`[icmp]`, `[metrics]` are documented in [CONFIGURATION.md](CONFIGURATION.md).
+
+### `[metrics]`
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `address` | string | `127.0.0.1:1987` | Metrics listen address |
+| `request_timeout_secs` | int | `3` | Metrics HTTP timeout |
+| `per_client_metrics` | bool | `true` in this fork | `/metrics` per-user series and `/clients` JSON |
+
+### `credentials.toml`
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `username` | string | required | Login |
+| `password` | string | required | Password |
+| `max_http2_conns` | int | global / unlimited | Override `default_max_http2_conns_per_client` |
+| `max_http3_conns` | int | global / unlimited | Override `default_max_http3_conns_per_client` |
+| `max_traffic_bytes` | int | global / unlimited | Override `default_max_traffic_bytes_per_client` |
+
+### CLI (`trusttunnel_endpoint`)
+
+| Flag | Short | Default | Notes |
+| --- | --- | --- | --- |
+| `--version` | `-v` | - | Print version and exit |
+| `--loglvl` | `-l` | `info` | `info`, `debug`, `trace` |
+| `--logfile` | - | stdout | Log file |
+| `--sentry_dsn` | - | - | Sentry DSN |
+| `--jobs` | - | `max(2, CPU count)` | Tokio worker threads. Use `2` on a 1-CPU VPS |
+| `<settings>` | - | required | Path to `vpn.toml` |
+| `<tls_hosts_settings>` | - | required | Path to `hosts.toml` |
+| `--client_config` | `-c` | - | Export client config and exit |
+| `--address` | `-a` | - | Address in exported config (repeatable) |
+| `--custom-sni` | `-s` | - | SNI override (must match `allowed_sni`) |
+| `--client-random-prefix` | `-r` | - | Explicit prefix in export |
+| `--generate-client-random-prefix` | - | - | Generate prefix and append allow rule |
+| `--prefix-length` | - | `4` | Generated prefix length (bytes) |
+| `--prefix-percent` | - | `70` | One-bits in generated mask |
+| `--prefix-mask` | - | - | Explicit hex mask |
+| `--format` | `-f` | `deeplink` | `deeplink` or `toml` |
+| `--name` | `-n` | - | Display name in client |
+| `--dns-upstream` | `-d` | - | DNS upstream (repeatable) |
 
 ## Clients
 

@@ -21,13 +21,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- [Fix] Drop default `tcp_connections_timeout_secs` from one week to two hours
+  so dead NAT sockets cannot occupy a client's `connection_limiter` slots for
+  days and starve fresh VPN requests.
+- [Fix] Remove the per-tunnel `Mutex` around the forwarder; the forwarder is
+  immutable for the tunnel's lifetime, so the lock only added contention under
+  the multiplexed request spawns on a 1-CPU host.
+- [Fix] `ConnectionLimiter` counters are `AtomicU32` with a `RwLock`-guarded
+  map lookup; per-client slot accounting no longer serialises on a single
+  mutex for every HTTP/2 multiplexed request.
+- [Fix] `udp_forwarder` reuses a `BytesMut` instead of copying the full
+  `MAX_UDP_PAYLOAD_SIZE` (~64 KiB) into a fresh `Bytes` on every datagram.
+- [Fix] SOCKS5 control connections enable TCP keepalive so the upstream
+  tunnel does not die silently between bursts.
+
 ### Deprecated
 
 ### Removed
 
-### Fixed
-
-- [Fix] Persist `traffic_usage.toml` on a background thread instead of on the
+- [Fix] Enable TCP keepalive on inbound and tunneled outbound sockets (60s
+  idle, 15s probes) so NAT idle timeouts are less likely to drop live VPN
+  streams. Prefer X25519 over X25519MLKEM768, cache rustls `ServerConfig`,
+  drop scanner ClientHellos with no ALPN, silence rustls `WARN`, default to
+  at least two tokio workers, and count quota bytes with atomics so persist
+  cannot stall the data path.
   data path. Cap *new* TCP accepts (128/s per IP, 512/s global) and concurrent
   TLS handshakes (32) so a scanner cannot pin a 1-CPU host, without dropping a
   normal reconnect burst of ~10 users with many HTTP/2 sessions.
