@@ -8,8 +8,11 @@ extern "C" {
 }
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use socket2::{SockRef, TcpKeepalive};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::time::Duration;
+use tokio::net::TcpStream;
 
 pub(crate) const MIN_LINK_MTU: usize = 1280;
 pub(crate) const MIN_IPV4_HEADER_SIZE: usize = 20;
@@ -84,6 +87,15 @@ pub(crate) fn make_udp_socket(is_v4: bool) -> io::Result<UdpSocket> {
     } else {
         UdpSocket::bind(SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)))
     }
+}
+
+/// Probe idle TCP so NAT/middleboxes do not silently drop long-lived tunnels.
+pub(crate) fn enable_tcp_keepalive(stream: &TcpStream) -> io::Result<()> {
+    let sock_ref = SockRef::from(stream);
+    let keepalive = TcpKeepalive::new()
+        .with_time(Duration::from_secs(60))
+        .with_interval(Duration::from_secs(15));
+    sock_ref.set_tcp_keepalive(&keepalive)
 }
 
 /// https://www.rfc-editor.org/rfc/rfc9000.html#section-16

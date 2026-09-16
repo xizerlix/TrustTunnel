@@ -2,7 +2,7 @@ use crate::forwarder::UdpMultiplexer;
 use crate::metrics::OutboundUdpSocketCounter;
 use crate::{core, datagram_pipe, downstream, forwarder, log_id, log_utils, net_utils};
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::BytesMut;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, LinkedList};
 use std::io;
@@ -108,12 +108,12 @@ impl MultiplexerSource {
             .get(meta)
             .map(|conn| conn.socket.clone())?;
 
-        let mut buffer = Vec::with_capacity(net_utils::MAX_UDP_PAYLOAD_SIZE);
+        let mut buffer = BytesMut::with_capacity(net_utils::MAX_UDP_PAYLOAD_SIZE);
         match socket.try_recv_buf(&mut buffer) {
             Ok(_) => Some(forwarder::UdpDatagramReadStatus::Read(
                 forwarder::UdpDatagram {
                     meta: meta.reversed(),
-                    payload: Bytes::from(buffer),
+                    payload: buffer.freeze(),
                 },
             )),
             Err(e) if e.kind() == ErrorKind::WouldBlock => None,

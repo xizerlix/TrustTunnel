@@ -2,8 +2,8 @@ use crate::authentication::registry_based::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -29,12 +29,41 @@ pub(crate) struct ClientTrafficSummary {
 
 struct ClientEntry {
     limit: Option<u64>,
-    usage: UsageRecord,
+    inbound: AtomicU64,
+    outbound: AtomicU64,
+}
+
+impl ClientEntry {
+    fn from_usage(limit: Option<u64>, usage: UsageRecord) -> Self {
+        Self {
+            limit,
+            inbound: AtomicU64::new(usage.inbound),
+            outbound: AtomicU64::new(usage.outbound),
+        }
+    }
+
+    fn usage(&self) -> UsageRecord {
+        UsageRecord {
+            inbound: self.inbound.load(Ordering::Relaxed),
+            outbound: self.outbound.load(Ordering::Relaxed),
+        }
+    }
+
+    fn allowed(&self) -> bool {
+        match self.limit {
+            Some(limit) => self
+                .inbound
+                .load(Ordering::Relaxed)
+                .saturating_add(self.outbound.load(Ordering::Relaxed))
+                <= limit,
+            None => true,
+        }
+    }
 }
 
 /// Tracks per-client traffic usage and enforces optional byte quotas.
 pub(crate) struct TrafficLimiter {
-    clients: Arc<Mutex<HashMap<String, ClientEntry>>>,
+    clients: Arc<RwLock<HashMap<String, ClientEntry>>>,
     usage_file: Option<PathBuf>,
     stop_persist: Arc<AtomicBool>,
     persist_thread: Mutex<Option<JoinHandle<()>>>,
@@ -51,14 +80,11 @@ impl TrafficLimiter {
         for client in clients {
             let entry = map
                 .entry(client.username.clone())
-                .or_insert_with(|| ClientEntry {
-                    limit: client.max_traffic_bytes.or(default_limit),
-                    usage: UsageRecord::default(),
-                });
+                .or_insert_with(|| ClientEntry::from_usage(None, UsageRecord::default()));
             entry.limit = client.max_traffic_bytes.or(default_limit);
         }
 
-        let clients = Arc::new(Mutex::new(map));
+        let clients = Arc::new(RwLock::new(map));
         let stop_persist = Arc::new(AtomicBool::new(false));
         let persist_thread = Mutex::new(None);
 
@@ -94,18 +120,18 @@ impl TrafficLimiter {
 
     pub fn is_enabled(&self) -> bool {
         self.clients
-            .lock()
+            .read()
             .unwrap()
             .values()
             .any(|entry| entry.limit.is_some())
     }
 
     pub fn is_allowed(&self, username: &str) -> bool {
-        let clients = self.clients.lock().unwrap();
+        let clients = self.clients.read().unwrap();
         let Some(entry) = clients.get(username) else {
             return true;
         };
-        Self::entry_allowed(entry)
+        entry.allowed()
     }
 
     pub fn record(&self, username: &str, direction: TrafficDirection, bytes: usize) -> bool {
@@ -113,26 +139,38 @@ impl TrafficLimiter {
             return self.is_allowed(username);
         }
 
-        let mut clients = self.clients.lock().unwrap();
-        let entry = clients
-            .entry(username.to_string())
-            .or_insert_with(|| ClientEntry {
-                limit: None,
-                usage: UsageRecord::default(),
-            });
-        match direction {
-            TrafficDirection::Inbound => {
-                entry.usage.inbound = entry.usage.inbound.saturating_add(bytes as u64);
-            }
-            TrafficDirection::Outbound => {
-                entry.usage.outbound = entry.usage.outbound.saturating_add(bytes as u64);
+        {
+            let clients = self.clients.read().unwrap();
+            if let Some(entry) = clients.get(username) {
+                match direction {
+                    TrafficDirection::Inbound => {
+                        entry.inbound.fetch_add(bytes as u64, Ordering::Relaxed);
+                    }
+                    TrafficDirection::Outbound => {
+                        entry.outbound.fetch_add(bytes as u64, Ordering::Relaxed);
+                    }
+                }
+                return entry.allowed();
             }
         }
-        Self::entry_allowed(entry)
+
+        let mut clients = self.clients.write().unwrap();
+        let entry = clients
+            .entry(username.to_string())
+            .or_insert_with(|| ClientEntry::from_usage(None, UsageRecord::default()));
+        match direction {
+            TrafficDirection::Inbound => {
+                entry.inbound.fetch_add(bytes as u64, Ordering::Relaxed);
+            }
+            TrafficDirection::Outbound => {
+                entry.outbound.fetch_add(bytes as u64, Ordering::Relaxed);
+            }
+        }
+        entry.allowed()
     }
 
     pub fn summary(&self, username: &str) -> ClientTrafficSummary {
-        let clients = self.clients.lock().unwrap();
+        let clients = self.clients.read().unwrap();
         let Some(entry) = clients.get(username) else {
             return ClientTrafficSummary {
                 inbound: 0,
@@ -141,40 +179,33 @@ impl TrafficLimiter {
                 quota_exceeded: false,
             };
         };
+        let usage = entry.usage();
         ClientTrafficSummary {
-            inbound: entry.usage.inbound,
-            outbound: entry.usage.outbound,
+            inbound: usage.inbound,
+            outbound: usage.outbound,
             limit: entry.limit,
-            quota_exceeded: !Self::entry_allowed(entry),
+            quota_exceeded: !entry.allowed(),
         }
     }
 
     pub fn all_summaries(&self) -> HashMap<String, ClientTrafficSummary> {
         self.clients
-            .lock()
+            .read()
             .unwrap()
             .iter()
             .map(|(username, entry)| {
+                let usage = entry.usage();
                 (
                     username.clone(),
                     ClientTrafficSummary {
-                        inbound: entry.usage.inbound,
-                        outbound: entry.usage.outbound,
+                        inbound: usage.inbound,
+                        outbound: usage.outbound,
                         limit: entry.limit,
-                        quota_exceeded: !Self::entry_allowed(entry),
+                        quota_exceeded: !entry.allowed(),
                     },
                 )
             })
             .collect()
-    }
-
-    fn entry_allowed(entry: &ClientEntry) -> bool {
-        match entry.limit {
-            Some(limit) => {
-                entry.usage.inbound.saturating_add(entry.usage.outbound) <= limit
-            }
-            None => true,
-        }
     }
 
     fn load_usage(path: Option<&Path>) -> HashMap<String, ClientEntry> {
@@ -201,10 +232,7 @@ impl TrafficLimiter {
             .map(|(username, usage)| {
                 (
                     username,
-                    ClientEntry {
-                        limit: None,
-                        usage,
-                    },
+                    ClientEntry::from_usage(None, usage),
                 )
             })
             .collect()
@@ -228,12 +256,12 @@ impl Drop for TrafficLimiter {
     }
 }
 
-fn persist_map(clients: &Mutex<HashMap<String, ClientEntry>>, path: &Path) {
+fn persist_map(clients: &RwLock<HashMap<String, ClientEntry>>, path: &Path) {
     let usage: HashMap<String, UsageRecord> = clients
-        .lock()
+        .read()
         .unwrap()
         .iter()
-        .map(|(username, entry)| (username.clone(), entry.usage.clone()))
+        .map(|(username, entry)| (username.clone(), entry.usage()))
         .collect();
 
     let content = match toml::to_string_pretty(&usage) {

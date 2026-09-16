@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" class="bg-slate-50 dark:bg-slate-900">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · TrustTunnel Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <meta name="csrf-token" content="{{ csrf }}">
+  <script>
+    document.addEventListener('htmx:configRequest', (evt) => {
+      evt.detail.headers['x-csrf-token'] = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    });
+  </script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+  </style>
+</head>
+<body class="text-slate-900 dark:text-slate-100 min-h-screen flex">
+  <aside class="w-56 bg-slate-100 dark:bg-slate-800 p-4 flex flex-col gap-2 border-r border-slate-200 dark:border-slate-700">
+    <h1 class="text-lg font-semibold mb-4 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="currentColor" fill-opacity="0.12"/><path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z"/><path d="M9 12l2 2 4-4"/></svg>TrustTunnel Admin</h1>
+    <a href="/dashboard" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">Dashboard</a>
+    <a href="/vpn" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">VPN settings</a>
+    <a href="/hosts" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">TLS hosts</a>
+    <a href="/users" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">Users</a>
+    <a href="/rules" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">Rules</a>
+    <a href="/logs" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">Logs</a>
+    <a href="/settings" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700">Settings</a>
+    <div class="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700">
+      <div class="text-sm text-slate-500 mb-2">{{ username }}</div>
+      <form method="post" action="/logout">
+        <button type="submit" class="btn-ghost inline-block px-3 py-2 rounded hover:bg-slate-200 dark:hover:bg-slate-700 w-full text-left">Logout</button>
+      </form>
+    </div>
+  </aside>
+  <main class="flex-1 p-8 max-w-5xl">
+    {% block body %}{% endblock %}
+  </main>
+</body>
+</html>

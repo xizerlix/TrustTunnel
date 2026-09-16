@@ -1,0 +1,14 @@
+[Unit]
+Description=TrustTunnel admin console
+After=network-online.target trusttunnel.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/trusttunnel
+ExecStart=/opt/trusttunnel/trusttunnel_admin --bind 127.0.0.1:8443 --paths-root /opt/trusttunnel --admin-toml /etc/trusttunnel/admin.toml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-3xl font-semibold mb-6">Logs</h1>
+
+<form method="get" action="/logs" class="mb-4 flex gap-2 items-end">
+  <label class="block">
+    <span class="block text-sm font-medium mb-1">Lines</span>
+    <input type="number" min="50" max="5000" name="lines" value="{{ lines }}" class="px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+  </label>
+  <label class="block">
+    <span class="block text-sm font-medium mb-1">Auto-refresh</span>
+    <select name="refresh" class="px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+      <option value="off" {% if refresh == "off" %}selected{% endif %}>off</option>
+      <option value="3" {% if refresh == "3" %}selected{% endif %}>3s</option>
+      <option value="10" {% if refresh == "10" %}selected{% endif %}>10s</option>
+      <option value="30" {% if refresh == "30" %}selected{% endif %}>30s</option>
+    </select>
+  </label>
+  <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">Refresh</button>
+</form>
+
+{% if let Some(e) = error %}
+  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+{% endif %}
+
+{% if refresh != "off" %}
+<script>
+  setTimeout(() => location.reload(), {{ refresh }}000);
+</script>
+{% endif %}
+
+<pre class="bg-slate-900 text-slate-100 p-4 rounded text-xs overflow-auto font-mono whitespace-pre-wrap break-all">{{ content }}</pre>
+{% endblock %}

@@ -14,7 +14,16 @@ use base64::Engine;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::ErrorKind;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+struct ActiveForwardGuard(Arc<AtomicU64>);
+
+impl Drop for ActiveForwardGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// Extract the username from base64-encoded `username:password` credentials.
 fn decode_username(creds: &str) -> Option<String> {
@@ -37,12 +46,13 @@ pub(crate) enum AuthenticationPolicy<'this> {
 pub(crate) struct Tunnel {
     context: Arc<core::Context>,
     downstream: Box<dyn Downstream>,
-    forwarder: Arc<Mutex<Box<dyn Forwarder>>>,
+    forwarder: Arc<dyn Forwarder>,
     authentication_policy: AuthenticationPolicy<'static>,
     /// Holds the connection slot acquired for this tunnel.
     /// Set at construction time for SNI-authenticated connections,
     /// or lazily on the first authenticated request for proxy-basic connections.
     connection_guard: Option<ConnectionGuard>,
+    active_forwards: Arc<AtomicU64>,
     id: log_utils::IdChain<u64>,
 }
 
@@ -83,9 +93,10 @@ impl Tunnel {
         Self {
             context,
             downstream,
-            forwarder: Arc::new(Mutex::new(forwarder)),
+            forwarder: Arc::from(forwarder),
             authentication_policy,
             connection_guard,
+            active_forwards: Arc::new(AtomicU64::new(0)),
             id,
         }
     }
@@ -150,6 +161,15 @@ impl Tunnel {
                     return Err(e);
                 }
                 Err(_) => {
+                    if self.active_forwards.load(Ordering::Relaxed) > 0 {
+                        log_id!(
+                            trace,
+                            self.id,
+                            "Tunnel listen timeout ignored: {} active forwards",
+                            self.active_forwards.load(Ordering::Relaxed)
+                        );
+                        continue;
+                    }
                     log_id!(trace, self.id, "Tunnel listen timeout");
                     return Err(io::Error::from(ErrorKind::TimedOut));
                 }
@@ -245,7 +265,10 @@ impl Tunnel {
                 }
             }
 
+            self.active_forwards.fetch_add(1, Ordering::Relaxed);
+            let _active_forward = ActiveForwardGuard(self.active_forwards.clone());
             tokio::spawn(async move {
+                let _active_forward = _active_forward;
                 fn report_fatal_if_too_many_open_files(
                     context: &Arc<core::Context>,
                     e: &ConnectionError,
@@ -388,7 +411,7 @@ impl Tunnel {
 
     async fn on_tcp_connect_request<F: Fn(pipe::SimplexDirection, usize) + Send + Clone>(
         context: Arc<core::Context>,
-        forwarder: Arc<Mutex<Box<dyn Forwarder>>>,
+        forwarder: Arc<dyn Forwarder>,
         request: Box<dyn PendingTcpConnectRequest>,
         forwarder_auth: Option<authentication::Source<'static>>,
         tls_domain: String,
@@ -435,7 +458,7 @@ impl Tunnel {
         };
 
         log_id!(trace, request_id, "TCP connect: connecting to peer");
-        let connector = forwarder.lock().unwrap().tcp_connector();
+        let connector = forwarder.tcp_connector();
         let (fwd_rx, fwd_tx) = match tokio::time::timeout(
             context.settings.connection_establishment_timeout,
             connector.connect(request_id.clone(), meta.clone()),
@@ -496,7 +519,7 @@ impl Tunnel {
 
     async fn on_datagram_mux_request<F: Fn(pipe::SimplexDirection, usize) + Send + Clone + Sync>(
         context: Arc<core::Context>,
-        forwarder: Arc<Mutex<Box<dyn Forwarder>>>,
+        forwarder: Arc<dyn Forwarder>,
         request: Box<dyn PendingDatagramMultiplexerRequest>,
         forwarder_auth: Option<authentication::Source<'static>>,
         tls_domain: String,
@@ -523,7 +546,7 @@ impl Tunnel {
         let user_agent = request.user_agent();
 
         if let Some(auth) = &forwarder_auth {
-            let authenticator = forwarder.lock().unwrap().datagram_mux_authenticator();
+            let authenticator = forwarder.datagram_mux_authenticator();
             if let Err(e) = authenticator
                 .check_auth(
                     client_address,
@@ -546,8 +569,6 @@ impl Tunnel {
                     user_agent,
                 };
                 let (fwd_shared, fwd_source, fwd_sink) = match forwarder
-                    .lock()
-                    .unwrap()
                     .make_udp_datagram_multiplexer(request_id.clone(), meta)
                 {
                     Ok(x) => x,
@@ -569,8 +590,6 @@ impl Tunnel {
             }
             Ok(downstream::DatagramPipeHalves::Icmp(dstr_source, dstr_sink)) => {
                 let (fwd_source, fwd_sink) = match forwarder
-                    .lock()
-                    .unwrap()
                     .make_icmp_datagram_multiplexer(request_id.clone())
                 {
                     Ok(Some(x)) => x,

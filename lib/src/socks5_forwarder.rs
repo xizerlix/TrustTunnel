@@ -90,7 +90,7 @@ impl forwarder::UdpDatagramPipeShared for DatagramTransceiverShared {
         }
 
         let socket = match socks5_client::connect(
-            TcpStream::connect(socks_settings(&self.context.settings).address).await?,
+            connect_socks(&self.context.settings).await?,
             self.auth.clone(),
             socks5_client::Request::UdpAssociate,
         )
@@ -240,7 +240,7 @@ impl forwarder::TcpConnector for TcpConnector {
             }
         };
 
-        let stream = match TcpStream::connect(socks_settings(&self.context.settings).address).await
+        let stream = match connect_socks(&self.context.settings).await
         {
             Ok(s) => s,
             Err(e) => return Err(tunnel::ConnectionError::Io(e)),
@@ -311,7 +311,7 @@ impl forwarder::DatagramMultiplexerAuthenticator for DatagramMuxAuthenticator {
         user_agent: Option<&'_ str>,
     ) -> Result<(), tunnel::ConnectionError> {
         match socks5_client::connect(
-            TcpStream::connect(socks_settings(&self.context.settings).address)
+            connect_socks(&self.context.settings)
                 .await
                 .map_err(tunnel::ConnectionError::Io)?,
             Some(
@@ -573,6 +573,12 @@ const fn socks_settings(settings: &Settings) -> &Socks5ForwarderSettings {
         ForwardProtocolSettings::Socks5(x) => x,
         ForwardProtocolSettings::Direct(_) => unreachable!(),
     }
+}
+
+async fn connect_socks(settings: &Settings) -> io::Result<TcpStream> {
+    let stream = TcpStream::connect(socks_settings(settings).address).await?;
+    net_utils::enable_tcp_keepalive(&stream)?;
+    Ok(stream)
 }
 
 fn socks_to_io_error(err: socks5_client::Error) -> io::Error {

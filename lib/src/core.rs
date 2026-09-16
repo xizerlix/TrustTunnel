@@ -22,7 +22,7 @@ use crate::{
     authentication, http_ping_handler, http_speedtest_handler, log_id, log_utils, metrics,
     net_utils, reverse_proxy, rules, settings, tls_demultiplexer, tunnel,
 };
-use socket2::{Domain, Protocol as SockProtocol, SockRef, Socket, Type};
+use socket2::{Domain, Protocol as SockProtocol, Socket, Type};
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -306,10 +306,7 @@ impl Core {
             log_id!(trace, client_id, "Accepting TCP connection");
             let (stream, client_addr) = match tcp_listener.accept().await.and_then(|(s, a)| {
                 s.set_nodelay(true)?;
-
-                // Enable TCP keepalive to detect broken connections.
-                let sock_ref = SockRef::from(&s);
-                sock_ref.set_keepalive(true)?;
+                net_utils::enable_tcp_keepalive(&s)?;
                 Ok((s, a))
             }) {
                 Ok((stream, addr)) => {

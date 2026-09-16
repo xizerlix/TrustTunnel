@@ -122,7 +122,7 @@ pub(crate) type IcmpMultiplexer = (
 );
 
 /// An abstract interface for a traffic forwarder implementation
-pub(crate) trait Forwarder: Send {
+pub(crate) trait Forwarder: Send + Sync {
     /// Create a TCP connector object
     fn tcp_connector(&self) -> Box<dyn TcpConnector>;
 

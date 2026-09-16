@@ -9,3 +9,4 @@ vpn.toml
 credentials.toml
 hosts.toml
 rules.toml
+.zcode/

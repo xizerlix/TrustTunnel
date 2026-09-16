@@ -155,6 +155,7 @@ impl TcpConnector for TcpForwarder {
             .await
             .and_then(|s| {
                 s.set_nodelay(true)?;
+                net_utils::enable_tcp_keepalive(&s)?;
                 Ok(s)
             })
             .map(|s| {

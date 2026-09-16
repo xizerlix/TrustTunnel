@@ -1,0 +1,25 @@
+# Drop this into /etc/caddy/Caddyfile (or include it).
+# Replace `<your-domain>` with the DNS name you want the admin UI served under.
+# Caddy will provision a Let's Encrypt cert automatically via the DNS challenge
+# of whichever DNS provider you use. If your DNS provider isn't supported by
+# Caddy's on-demand-TLS, point DNS at this server and use HTTP-01 instead
+# (remove the `:8443` listener, run Caddy on :443).
+#
+# To install Caddy with the duckdns module (replace with your DNS provider):
+#   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/xcaddy/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-xcaddy.gpg
+#   echo "deb [signed-by=/usr/share/keyrings/caddy-xcaddy.gpg] https://dl.cloudsmith.io/public/caddy/xcaddy/deb/debian any-version main" | sudo tee /etc/apt/sources.list.d/caddy-xcaddy.list
+#   sudo apt update && sudo apt install caddy
+#
+# If using the duckdns plugin:
+#   sudo caddy add-package github.com/caddy-dns/duckdns
+
+<your-domain>:8443 {
+    encode gzip zstd
+    reverse_proxy 127.0.0.1:8443
+    basicauth {
+        # Optional: add an additional HTTP basic auth on top of the admin login.
+        # Remove this block if you only want the in-app login form.
+        # admin JDJhJDE0JDhCY1Ziek0wN3d3ay5OdmouY3BlVjlKUmZxc3laSExXZEhUSk9NZ0JWYW1LOVpEblBWb1lt
+    }
+}

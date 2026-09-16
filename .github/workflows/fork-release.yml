@@ -54,6 +54,9 @@ jobs:
           NAME="trusttunnel-${TAG}-${ARCH}"
           mkdir -p "dist/${NAME}"
           cp target/release/trusttunnel_endpoint "dist/${NAME}/"
+          if [ -f target/release/trusttunnel_admin ]; then
+            cp target/release/trusttunnel_admin "dist/${NAME}/"
+          fi
           cp LICENSE "dist/${NAME}/"
           tar -czf "${NAME}.tar.gz" -C dist "${NAME}"
           echo "PACKAGE=${NAME}.tar.gz" >> "$GITHUB_ENV"
@@ -65,6 +68,7 @@ jobs:
           name: TrustTunnel ${{ github.event.inputs.tag || github.ref_name }}
           body: |
             Linux x86_64 fork of TrustTunnel v1.1.0: `/clients` (ips[], quotas),
-            traffic_usage_file persistence, accept-rate / handshake limits.
+            traffic_usage_file persistence, accept-rate / handshake limits,
+            and the optional `trusttunnel_admin` web console.
           files: ${{ env.PACKAGE }}
           generate_release_notes: true

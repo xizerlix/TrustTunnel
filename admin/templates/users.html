@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-3xl font-semibold mb-6">Users</h1>
+
+{% if let Some(s) = save_status %}
+  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+{% endif %}
+{% if let Some(e) = error %}
+  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+{% endif %}
+
+<form method="post" action="/users" class="space-y-4">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="text-sm text-slate-400">Empty rows are ignored. To delete a user, clear both username and password in that row. Saving restarts the service (briefly disconnects all users).</p>
+
+  <table class="w-full bg-white dark:bg-slate-800 rounded shadow text-sm">
+    <thead>
+      <tr class="text-left border-b border-slate-200 dark:border-slate-700">
+        <th class="p-2">Username</th>
+        <th class="p-2">Password</th>
+        <th class="p-2">max_http2_conns</th>
+        <th class="p-2">max_http3_conns</th>
+        <th class="p-2">max_traffic_bytes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in creds.clients %}
+      <tr class="border-b border-slate-100 dark:border-slate-700">
+        <td class="p-2">
+          <input type="text" name="username" value="{{ c.username }}">
+          {% if !c.username.is_empty() %}
+          <button type="button"
+                  hx-delete="/users/{{ c.username }}/delete"
+                  hx-confirm="Delete user {{ c.username }}?"
+                  hx-headers='{"x-csrf-token": "{{ csrf }}"}'
+                  class="ml-2 px-2 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-700">delete</button>
+          {% endif %}
+        </td>
+        <td class="p-2"><input type="password" name="password" placeholder="(unchanged)"></td>
+        <td class="p-2"><input type="number" min="0" name="max_http2_conns" value="{% if c.max_http2_conns > 0 %}{{ c.max_http2_conns }}{% endif %}" placeholder="∞"></td>
+        <td class="p-2"><input type="number" min="0" name="max_http3_conns" value="{% if c.max_http3_conns > 0 %}{{ c.max_http3_conns }}{% endif %}" placeholder="∞"></td>
+        <td class="p-2"><input type="number" min="0" name="max_traffic_bytes" value="{% if c.max_traffic_bytes > 0 %}{{ c.max_traffic_bytes }}{% endif %}" placeholder="∞"></td>
+      </tr>
+      {% endfor %}
+      {% if creds.clients.is_empty() %}
+      <tr><td colspan="5" class="p-4 text-center text-slate-400">No users yet. Add one below.</td></tr>
+      {% endif %}
+      <tr>
+        <td class="p-2"><input type="text" name="username" placeholder="new username"></td>
+        <td class="p-2"><input type="password" name="password" placeholder="new password"></td>
+        <td class="p-2"><input type="number" min="0" name="max_http2_conns" value="0"></td>
+        <td class="p-2"><input type="number" min="0" name="max_http3_conns" value="0"></td>
+        <td class="p-2"><input type="number" min="0" name="max_traffic_bytes" value="0"></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="flex justify-end">
+    <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">
+      Save &amp; restart
+    </button>
+  </div>
+</form>
+{% endblock %}

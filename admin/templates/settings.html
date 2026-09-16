@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="text-3xl font-semibold mb-6">Settings</h1>
+
+{% if let Some(s) = status %}
+  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+{% endif %}
+{% if let Some(e) = error %}
+  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+{% endif %}
+
+<h2 class="text-xl font-semibold mb-2">Change admin password</h2>
+<form method="post" action="/settings" class="space-y-4 max-w-md bg-white dark:bg-slate-800 p-6 rounded shadow">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="block">
+    <span class="block text-sm font-medium mb-1">Current password</span>
+    <input type="password" name="current_password" required autocomplete="current-password"
+           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+  </label>
+  <label class="block">
+    <span class="block text-sm font-medium mb-1">New password (min 10 chars)</span>
+    <input type="password" name="new_password" required minlength="10" autocomplete="new-password"
+           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+  </label>
+  <label class="block">
+    <span class="block text-sm font-medium mb-1">Confirm new password</span>
+    <input type="password" name="confirm_password" required minlength="10" autocomplete="new-password"
+           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+  </label>
+  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">Update password</button>
+</form>
+{% endblock %}
