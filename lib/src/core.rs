@@ -285,8 +285,11 @@ impl Core {
         info!("Listening to TCP {}", settings.listen_address);
 
         let tls_listener = Arc::new(TlsListener::new());
-        let accept_limiter = AcceptLimiter::new(24, 80);
-        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(8));
+        // Per-IP / global caps apply only to *new* TCP accepts, not to already
+        // established sessions. Values must absorb a full client reconnect burst
+        // after endpoint restart (many HTTP/2 sessions per device).
+        let accept_limiter = AcceptLimiter::new(128, 512);
+        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(32));
         loop {
             let client_id = log_utils::IdChain::from(log_utils::IdItem::new(
                 log_utils::CLIENT_ID_FMT,
@@ -304,7 +307,7 @@ impl Core {
                 Ok((stream, addr)) => {
                     if !accept_limiter.allow(addr.ip()) {
                         log_id!(
-                            debug,
+                            warn,
                             client_id,
                             "Dropping TCP client over accept rate limit: {}",
                             addr

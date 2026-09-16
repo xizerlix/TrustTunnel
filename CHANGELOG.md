@@ -24,11 +24,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- [Fix] Cap new TCP accepts (24/s per IP, 80/s global) and concurrent TLS
-  handshakes (8) so handshake storms cannot pin a 1-CPU host. Persist
-  `traffic_usage.toml` on a background thread instead of on the data path.
+- [Fix] Persist `traffic_usage.toml` on a background thread instead of on the
+  data path. Cap *new* TCP accepts (128/s per IP, 512/s global) and concurrent
+  TLS handshakes (32) so a scanner cannot pin a 1-CPU host, without dropping a
+  normal reconnect burst of ~10 users with many HTTP/2 sessions.
 - [Fix] Fork release workflow sets `TRUSTTUNNEL_VERSION` from the git tag so
   `trusttunnel_endpoint --version` reports `custom-*` instead of `0.0.0-git`.
+- [Fix] `custom-1.1.1` accept/handshake caps (24/s per IP, 80/s global, 8 TLS)
+  dropped legitimate reconnects after restart; raised and logged at `warn`.
 
 ### Security
 
