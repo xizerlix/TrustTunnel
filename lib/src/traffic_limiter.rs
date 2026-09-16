@@ -244,26 +244,12 @@ fn persist_map(clients: &Mutex<HashMap<String, ClientEntry>>, path: &Path) {
         }
     };
 
-    let mut content = content;
-    if !content.ends_with('\n') {
-        content.push('\n');
-    }
-    let tmp = path.with_extension("toml.tmp");
-    if let Err(e) = std::fs::write(&tmp, content) {
+    if let Err(e) = std::fs::write(path, content) {
         log::warn!(
             "Couldn't write traffic usage file {}: {}",
-            tmp.display(),
-            e
-        );
-        return;
-    }
-    if let Err(e) = std::fs::rename(&tmp, path) {
-        log::warn!(
-            "Couldn't replace traffic usage file {}: {}",
             path.display(),
             e
         );
-        let _ = std::fs::remove_file(&tmp);
     }
 }
 

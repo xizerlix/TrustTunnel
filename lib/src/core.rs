@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::{watch, OwnedSemaphorePermit};
+use tokio::sync::watch;
 
 #[derive(Debug)]
 pub enum Error {
@@ -285,10 +285,11 @@ impl Core {
         info!("Listening to TCP {}", settings.listen_address);
 
         let tls_listener = Arc::new(TlsListener::new());
-        // Caps apply only to *new* TCP accepts / in-flight handshakes, not to
-        // established tunnels. Keep them low on 1-CPU hosts.
-        let accept_limiter = AcceptLimiter::new(24, 48);
-        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(4));
+        // Per-IP / global caps apply only to *new* TCP accepts, not to already
+        // established sessions. Values must absorb a full client reconnect burst
+        // after endpoint restart (many HTTP/2 sessions per device).
+        let accept_limiter = AcceptLimiter::new(128, 512);
+        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(32));
         loop {
             let client_id = log_utils::IdChain::from(log_utils::IdItem::new(
                 log_utils::CLIENT_ID_FMT,
@@ -306,7 +307,7 @@ impl Core {
                 Ok((stream, addr)) => {
                     if !accept_limiter.allow(addr.ip()) {
                         log_id!(
-                            debug,
+                            warn,
                             client_id,
                             "Dropping TCP client over accept rate limit: {}",
                             addr
@@ -332,7 +333,7 @@ impl Core {
                 let tls_listener = tls_listener.clone();
                 let handshake_slots = handshake_slots.clone();
                 async move {
-                    let Ok(permit) = handshake_slots.acquire_owned().await else {
+                    let Ok(_permit) = handshake_slots.acquire_owned().await else {
                         return;
                     };
                     log_id!(trace, client_id, "Starting TLS handshake");
@@ -345,14 +346,13 @@ impl Core {
                             log_id!(
                                 trace,
                                 client_id,
-                                "ClientHello received, processing connection"
+                                "TLS handshake complete, processing connection"
                             );
                             if let Err((client_id, message)) = Core::on_new_tls_connection(
                                 context.clone(),
                                 acceptor,
                                 net_utils::unmap_ipv6(client_addr.ip()),
                                 client_id,
-                                Some(permit),
                             )
                             .await
                             {
@@ -424,7 +424,6 @@ impl Core {
         acceptor: TlsAcceptor,
         client_ip: std::net::IpAddr,
         client_id: log_utils::IdChain<u64>,
-        handshake_permit: Option<OwnedSemaphorePermit>,
     ) -> Result<(), (log_utils::IdChain<u64>, String)> {
         log_id!(
             trace,
@@ -503,7 +502,6 @@ impl Core {
         .await
         {
             Ok(Ok(s)) => {
-                drop(handshake_permit);
                 log_id!(debug, client_id, "New TLS client: {:?}", s);
                 s
             }

@@ -30,17 +30,6 @@ pub fn make_file_logger(path: &str) -> std::io::Result<&'static impl Log> {
     LOGGER.get_or_try_init(|| FileLogger::new(path))
 }
 
-fn is_noisy_tls_target(target: &str) -> bool {
-    target == "rustls" || target.starts_with("rustls::") || target.starts_with("tokio_rustls")
-}
-
-fn logging_enabled(metadata: &Metadata) -> bool {
-    if is_noisy_tls_target(metadata.target()) && metadata.level() < log::Level::Error {
-        return false;
-    }
-    metadata.level() <= log::max_level()
-}
-
 fn write_record(mut w: impl Write, record: &Record) -> std::io::Result<()> {
     writeln!(
         w,
@@ -55,7 +44,7 @@ fn write_record(mut w: impl Write, record: &Record) -> std::io::Result<()> {
 
 impl Log for StdoutLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        logging_enabled(metadata)
+        metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &Record) {
@@ -83,7 +72,7 @@ impl FileLogger {
 
 impl Log for FileLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        logging_enabled(metadata)
+        metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &Record) {
@@ -199,16 +188,5 @@ mod tests {
 
         chain = chain.extended(IdItem::new("ok {}", 73));
         assert_eq!("hello 42/ok 73", format!("{}", chain));
-    }
-
-    #[test]
-    fn silences_rustls_warnings() {
-        let warn = log::Metadata::builder()
-            .level(log::Level::Warn)
-            .target("rustls::conn")
-            .build();
-        assert!(!super::logging_enabled(&warn));
-        assert!(super::is_noisy_tls_target("rustls::conn"));
-        assert!(!super::is_noisy_tls_target("trusttunnel"));
     }
 }

@@ -2,11 +2,9 @@ use crate::{log_utils, net_utils, tls_demultiplexer};
 use rustls::crypto::aws_lc_rs;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::io;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tls_parser::{parse_tls_plaintext, TlsMessage};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
@@ -15,55 +13,6 @@ use tokio_rustls::server::TlsStream;
 use tokio_rustls::{LazyConfigAcceptor, StartHandshake};
 
 pub(crate) struct TlsListener {}
-
-fn rustls_config_fingerprint(
-    protocol: tls_demultiplexer::Protocol,
-    cert_chain: &[CertificateDer<'_>],
-    key: &PrivateKeyDer<'_>,
-) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    protocol.as_alpn().hash(&mut hasher);
-    for cert in cert_chain {
-        cert.as_ref().hash(&mut hasher);
-    }
-    key.secret_der().hash(&mut hasher);
-    hasher.finish()
-}
-
-fn rustls_server_config(
-    protocol: tls_demultiplexer::Protocol,
-    cert_chain: Vec<CertificateDer<'static>>,
-    key: PrivateKeyDer<'static>,
-) -> io::Result<Arc<ServerConfig>> {
-    static CACHE: Mutex<HashMap<u64, Arc<ServerConfig>>> = Mutex::new(HashMap::new());
-    let fingerprint = rustls_config_fingerprint(protocol, &cert_chain, &key);
-    let mut cache = CACHE.lock().unwrap();
-    if let Some(cfg) = cache.get(&fingerprint) {
-        return Ok(cfg.clone());
-    }
-
-    let mut provider = aws_lc_rs::default_provider();
-    // Prefer X25519: X25519MLKEM768 first pins a 1-CPU host during reconnects.
-    provider.kx_groups = vec![
-        aws_lc_rs::kx_group::X25519,
-        aws_lc_rs::kx_group::SECP256R1,
-        aws_lc_rs::kx_group::SECP384R1,
-        aws_lc_rs::kx_group::X25519MLKEM768,
-    ];
-    let mut cfg = ServerConfig::builder_with_provider(Arc::new(provider))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| io::Error::other(format!("TLS config error: {}", e)))?
-        .with_no_client_auth()
-        .with_single_cert(cert_chain, key)
-        .map_err(|e| io::Error::other(format!("Failed to create TLS configuration: {}", e)))?;
-    cfg.alpn_protocols = vec![protocol.as_alpn().as_bytes().to_vec()];
-    let cfg = Arc::new(cfg);
-    if cache.len() >= 32 {
-        cache.clear();
-    }
-    cache.insert(fingerprint, cfg.clone());
-    Ok(cfg)
-}
 
 pub(crate) struct TlsAcceptor {
     inner: StartHandshake<PrebufferedTcpStream>,
@@ -250,7 +199,27 @@ impl TlsAcceptor {
         key: PrivateKeyDer<'static>,
         _log_id: &log_utils::IdChain<u64>,
     ) -> io::Result<TlsStream<PrebufferedTcpStream>> {
-        let tls_config = rustls_server_config(protocol, cert_chain, key)?;
+        let tls_config = {
+            let mut provider = aws_lc_rs::default_provider();
+            provider.kx_groups = vec![
+                aws_lc_rs::kx_group::X25519MLKEM768,
+                aws_lc_rs::kx_group::X25519,
+                aws_lc_rs::kx_group::SECP256R1,
+                aws_lc_rs::kx_group::SECP384R1,
+            ];
+            let mut cfg = ServerConfig::builder_with_provider(Arc::new(provider))
+                .with_safe_default_protocol_versions()
+                .map_err(|e| io::Error::other(format!("TLS config error: {}", e)))?
+                .with_no_client_auth()
+                .with_single_cert(cert_chain, key)
+                .map_err(|e| {
+                    io::Error::other(format!("Failed to create TLS configuration: {}", e))
+                })?;
+
+            cfg.alpn_protocols = vec![protocol.as_alpn().as_bytes().to_vec()];
+            Arc::new(cfg)
+        };
+
         self.inner.into_stream(tls_config).await
     }
 }
