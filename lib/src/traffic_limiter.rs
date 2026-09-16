@@ -2,8 +2,10 @@ use crate::authentication::registry_based::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TrafficDirection {
@@ -32,10 +34,10 @@ struct ClientEntry {
 
 /// Tracks per-client traffic usage and enforces optional byte quotas.
 pub(crate) struct TrafficLimiter {
-    clients: Mutex<HashMap<String, ClientEntry>>,
+    clients: Arc<Mutex<HashMap<String, ClientEntry>>>,
     usage_file: Option<PathBuf>,
-    last_persist: Mutex<Instant>,
-    persist_interval: Duration,
+    stop_persist: Arc<AtomicBool>,
+    persist_thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl TrafficLimiter {
@@ -47,19 +49,47 @@ impl TrafficLimiter {
         let mut map = Self::load_usage(usage_file.as_deref());
 
         for client in clients {
-            let entry = map.entry(client.username.clone()).or_insert_with(|| ClientEntry {
-                limit: client.max_traffic_bytes.or(default_limit),
-                usage: UsageRecord::default(),
-            });
+            let entry = map
+                .entry(client.username.clone())
+                .or_insert_with(|| ClientEntry {
+                    limit: client.max_traffic_bytes.or(default_limit),
+                    usage: UsageRecord::default(),
+                });
             entry.limit = client.max_traffic_bytes.or(default_limit);
         }
 
-        Arc::new(Self {
-            clients: Mutex::new(map),
-            usage_file,
-            last_persist: Mutex::new(Instant::now()),
-            persist_interval: Duration::from_secs(30),
-        })
+        let clients = Arc::new(Mutex::new(map));
+        let stop_persist = Arc::new(AtomicBool::new(false));
+        let persist_thread = Mutex::new(None);
+
+        let limiter = Arc::new(Self {
+            clients: clients.clone(),
+            usage_file: usage_file.clone(),
+            stop_persist: stop_persist.clone(),
+            persist_thread,
+        });
+
+        if let Some(path) = usage_file {
+            let map = clients;
+            let stop = stop_persist;
+            let handle = std::thread::Builder::new()
+                .name("tt-traffic-persist".into())
+                .spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        for _ in 0..30 {
+                            if stop.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                        persist_map(&map, &path);
+                    }
+                })
+                .ok();
+            *limiter.persist_thread.lock().unwrap() = handle;
+        }
+
+        limiter
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -83,27 +113,22 @@ impl TrafficLimiter {
             return self.is_allowed(username);
         }
 
-        let still_allowed = {
-            let mut clients = self.clients.lock().unwrap();
-            let entry = clients
-                .entry(username.to_string())
-                .or_insert_with(|| ClientEntry {
-                    limit: None,
-                    usage: UsageRecord::default(),
-                });
-            match direction {
-                TrafficDirection::Inbound => {
-                    entry.usage.inbound = entry.usage.inbound.saturating_add(bytes as u64);
-                }
-                TrafficDirection::Outbound => {
-                    entry.usage.outbound = entry.usage.outbound.saturating_add(bytes as u64);
-                }
+        let mut clients = self.clients.lock().unwrap();
+        let entry = clients
+            .entry(username.to_string())
+            .or_insert_with(|| ClientEntry {
+                limit: None,
+                usage: UsageRecord::default(),
+            });
+        match direction {
+            TrafficDirection::Inbound => {
+                entry.usage.inbound = entry.usage.inbound.saturating_add(bytes as u64);
             }
-            Self::entry_allowed(entry)
-        };
-
-        self.maybe_persist();
-        still_allowed
+            TrafficDirection::Outbound => {
+                entry.usage.outbound = entry.usage.outbound.saturating_add(bytes as u64);
+            }
+        }
+        Self::entry_allowed(entry)
     }
 
     pub fn summary(&self, username: &str) -> ClientTrafficSummary {
@@ -145,7 +170,9 @@ impl TrafficLimiter {
 
     fn entry_allowed(entry: &ClientEntry) -> bool {
         match entry.limit {
-            Some(limit) => entry.usage.inbound.saturating_add(entry.usage.outbound) <= limit,
+            Some(limit) => {
+                entry.usage.inbound.saturating_add(entry.usage.outbound) <= limit
+            }
             None => true,
         }
     }
@@ -161,7 +188,11 @@ impl TrafficLimiter {
         let stored: HashMap<String, UsageRecord> = match toml::from_str(&content) {
             Ok(stored) => stored,
             Err(e) => {
-                log::warn!("Couldn't parse traffic usage file {}: {}", path.display(), e);
+                log::warn!(
+                    "Couldn't parse traffic usage file {}: {}",
+                    path.display(),
+                    e
+                );
                 return HashMap::new();
             }
         };
@@ -179,37 +210,46 @@ impl TrafficLimiter {
             .collect()
     }
 
-    fn maybe_persist(&self) {
+    pub(crate) fn persist_now(&self) {
         let Some(path) = self.usage_file.as_ref() else {
             return;
         };
+        persist_map(&self.clients, path);
+    }
+}
 
-        let mut last_persist = self.last_persist.lock().unwrap();
-        if last_persist.elapsed() < self.persist_interval {
+impl Drop for TrafficLimiter {
+    fn drop(&mut self) {
+        self.stop_persist.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.persist_thread.lock().unwrap().take() {
+            let _ = handle.join();
+        }
+        self.persist_now();
+    }
+}
+
+fn persist_map(clients: &Mutex<HashMap<String, ClientEntry>>, path: &Path) {
+    let usage: HashMap<String, UsageRecord> = clients
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(username, entry)| (username.clone(), entry.usage.clone()))
+        .collect();
+
+    let content = match toml::to_string_pretty(&usage) {
+        Ok(content) => content,
+        Err(e) => {
+            log::warn!("Couldn't serialize traffic usage: {}", e);
             return;
         }
-        *last_persist = Instant::now();
-        drop(last_persist);
+    };
 
-        let usage: HashMap<String, UsageRecord> = self
-            .clients
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(username, entry)| (username.clone(), entry.usage.clone()))
-            .collect();
-
-        let content = match toml::to_string_pretty(&usage) {
-            Ok(content) => content,
-            Err(e) => {
-                log::warn!("Couldn't serialize traffic usage: {}", e);
-                return;
-            }
-        };
-
-        if let Err(e) = std::fs::write(path, content) {
-            log::warn!("Couldn't write traffic usage file {}: {}", path.display(), e);
-        }
+    if let Err(e) = std::fs::write(path, content) {
+        log::warn!(
+            "Couldn't write traffic usage file {}: {}",
+            path.display(),
+            e
+        );
     }
 }
 
@@ -270,10 +310,14 @@ mod tests {
         let path = file.path().to_path_buf();
 
         {
-            let limiter = TrafficLimiter::new(&[make_client("alice", Some(1000))], None, Some(path.clone()));
+            let limiter = TrafficLimiter::new(
+                &[make_client("alice", Some(1000))],
+                None,
+                Some(path.clone()),
+            );
             limiter.record("alice", TrafficDirection::Inbound, 123);
             limiter.record("alice", TrafficDirection::Outbound, 456);
-            limiter.maybe_persist();
+            limiter.persist_now();
         }
 
         let reloaded = TrafficLimiter::new(&[make_client("alice", Some(1000))], None, Some(path));

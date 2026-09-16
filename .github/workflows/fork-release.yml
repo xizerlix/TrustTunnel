@@ -41,6 +41,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binaries
+        env:
+          TRUSTTUNNEL_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: cargo +1.95 build --bins --release
 
       - name: Package
@@ -62,7 +64,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: TrustTunnel ${{ github.event.inputs.tag || github.ref_name }}
           body: |
-            Linux x86_64 build based on TrustTunnel v1.1.0 with `/clients`
-            (ips[], quotas) and optional traffic_usage_file persistence.
+            Linux x86_64 fork of TrustTunnel v1.1.0: `/clients` (ips[], quotas),
+            traffic_usage_file persistence, accept-rate / handshake limits.
           files: ${{ env.PACKAGE }}
           generate_release_notes: true

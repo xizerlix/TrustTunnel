@@ -1,3 +1,4 @@
+use crate::accept_limiter::AcceptLimiter;
 use crate::connection_limiter::ConnectionLimiter;
 use crate::direct_forwarder::DirectForwarder;
 use crate::forwarder::Forwarder;
@@ -284,6 +285,8 @@ impl Core {
         info!("Listening to TCP {}", settings.listen_address);
 
         let tls_listener = Arc::new(TlsListener::new());
+        let accept_limiter = AcceptLimiter::new(24, 80);
+        let handshake_slots = Arc::new(tokio::sync::Semaphore::new(8));
         loop {
             let client_id = log_utils::IdChain::from(log_utils::IdItem::new(
                 log_utils::CLIENT_ID_FMT,
@@ -299,6 +302,16 @@ impl Core {
                 Ok((s, a))
             }) {
                 Ok((stream, addr)) => {
+                    if !accept_limiter.allow(addr.ip()) {
+                        log_id!(
+                            debug,
+                            client_id,
+                            "Dropping TCP client over accept rate limit: {}",
+                            addr
+                        );
+                        drop(stream);
+                        continue;
+                    }
                     if has_tcp_based_codec {
                         log_id!(debug, client_id, "New TCP client: {}", addr);
                         (stream, addr)
@@ -315,7 +328,11 @@ impl Core {
             tokio::spawn({
                 let context = self.context.clone();
                 let tls_listener = tls_listener.clone();
+                let handshake_slots = handshake_slots.clone();
                 async move {
+                    let Ok(_permit) = handshake_slots.acquire_owned().await else {
+                        return;
+                    };
                     log_id!(trace, client_id, "Starting TLS handshake");
                     let handshake_timeout = context.settings.tls_handshake_timeout;
                     match tokio::time::timeout(handshake_timeout, tls_listener.listen(stream))

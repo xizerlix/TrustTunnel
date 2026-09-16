@@ -6,7 +6,7 @@
 //
 // Resolution order (mirrors the C++ projects' cmake/version.cmake):
 //   1. TRUSTTUNNEL_VERSION environment variable (CI sets it from CHANGELOG.md);
-//   2. git describe --tags --match 'v*' (a plain local build is self-versioning);
+//   2. git describe --tags --match 'custom-*' or 'v*' (local tagged builds);
 //   3. 0.0.0-git fallback (never hard-fails the build).
 use std::process::Command;
 
@@ -19,7 +19,7 @@ fn resolve_version() -> String {
     }
 
     if let Ok(out) = Command::new("git")
-        .args(["describe", "--tags", "--match", "v*"])
+        .args(["describe", "--tags", "--match", "custom-*", "--match", "v*"])
         .output()
     {
         if out.status.success() {
