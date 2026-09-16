@@ -370,13 +370,8 @@ impl TlsDemux {
             .cloned()
         {
             Some(x) => Ok(x),
-            None if self.tunnel_protocols.contains(&DEFAULT_PROTOCOL)
-                && advertised_alpn.clone().peekable().peek().is_none() =>
-            {
-                Ok(DEFAULT_PROTOCOL)
-            }
             None => Err(format!(
-                "Unexpected ALPN on reverse proxy connection {:?}",
+                "No usable ALPN for tunnel (scanners omit ALPN): {:?}",
                 advertised_alpn.map(utils::hex_dump).collect::<Vec<_>>()
             )),
         }
@@ -451,6 +446,14 @@ mod tests {
 
         let test_samples = vec![
             Sample {
+                listen_protocols: ListenProtocolSettings {
+                    http1: Some(Http1Settings::builder().build()),
+                    http2: Some(Http2Settings::builder().build()),
+                    ..Default::default()
+                },
+                advertised_protocols: vec![],
+            },
+            Sample {
                 listen_protocols: Default::default(),
                 advertised_protocols: vec![],
             },
@@ -506,15 +509,6 @@ mod tests {
         }
 
         let test_samples = vec![
-            Sample {
-                listen_protocols: ListenProtocolSettings {
-                    http1: Some(Http1Settings::builder().build()),
-                    http2: Some(Http2Settings::builder().build()),
-                    ..Default::default()
-                },
-                advertised_protocols: vec![],
-                expected_selection: Protocol::Http1,
-            },
             Sample {
                 listen_protocols: ListenProtocolSettings {
                     http1: Some(Http1Settings::builder().build()),

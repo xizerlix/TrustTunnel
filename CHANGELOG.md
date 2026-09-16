@@ -25,13 +25,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - [Fix] Persist `traffic_usage.toml` on a background thread instead of on the
-  data path. Cap *new* TCP accepts (128/s per IP, 512/s global) and concurrent
-  TLS handshakes (32) so a scanner cannot pin a 1-CPU host, without dropping a
-  normal reconnect burst of ~10 users with many HTTP/2 sessions.
+  data path. Cap new TCP accepts (24/s per IP, 48/s global) and concurrent TLS
+  handshakes (4). Handshake slots are released after crypto, not after the
+  tunnel ends (the previous cap silently queued live VPN sessions).
+- [Fix] Drop tunnel ClientHellos with no usable ALPN before the crypto
+  handshake (internet scanners), cache rustls `ServerConfig`, and silence
+  rustls `WARN` noise that was pinning journald/CPU.
+- [Fix] Prefer X25519 over X25519MLKEM768 and default to at least 2 tokio
+  workers so reconnect bursts do not pin a 1-CPU host.
 - [Fix] Fork release workflow sets `TRUSTTUNNEL_VERSION` from the git tag so
   `trusttunnel_endpoint --version` reports `custom-*` instead of `0.0.0-git`.
-- [Fix] `custom-1.1.1` accept/handshake caps (24/s per IP, 80/s global, 8 TLS)
-  dropped legitimate reconnects after restart; raised and logged at `warn`.
 
 ### Security
 
