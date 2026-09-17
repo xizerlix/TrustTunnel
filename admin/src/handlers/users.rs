@@ -21,6 +21,7 @@ pub struct UsersTemplate {
     pub t: I18n,
     pub lang: &'static str,
     pub rows: Vec<UserEditRow>,
+    pub default_traffic_gb: String,
     pub save_status: Option<String>,
     pub error: Option<String>,
 }
@@ -58,6 +59,7 @@ fn page(
     session: &crate::auth::Session,
     headers: &HeaderMap,
     creds: &CredentialsToml,
+    default_traffic_gb: String,
     save_status: Option<String>,
     error: Option<String>,
 ) -> UsersTemplate {
@@ -70,9 +72,41 @@ fn page(
         t,
         lang: lang.as_str(),
         rows: rows_from(creds),
+        default_traffic_gb,
         save_status,
         error,
     }
+}
+
+fn default_gb_from_vpn(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| VpnToml::from_str(&s).ok())
+        .map(|v| bytes_to_gib_field(v.default_max_traffic_bytes_per_client))
+        .unwrap_or_default()
+}
+
+pub fn patch_vpn_default_quota(path: &std::path::Path, bytes: u64) -> AdminResult<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(AdminError::Io(e)),
+    };
+    let mut doc: toml_edit::DocumentMut = text.parse()?;
+    if bytes == 0 {
+        doc.remove("default_max_traffic_bytes_per_client");
+    } else {
+        doc["default_max_traffic_bytes_per_client"] = toml_edit::value(bytes as i64);
+        let usage_empty = doc
+            .get("traffic_usage_file")
+            .and_then(|i| i.as_str())
+            .unwrap_or("")
+            .is_empty();
+        if usage_empty {
+            doc["traffic_usage_file"] = toml_edit::value("traffic_usage.toml");
+        }
+    }
+    crate::apply::atomic_write(path, &doc.to_string())
 }
 
 pub async fn users_form(
@@ -81,7 +115,15 @@ pub async fn users_form(
     headers: HeaderMap,
 ) -> AdminResult<Response> {
     let creds = load_or_default(&state.paths.credentials_toml)?;
-    Ok(page(&session, &headers, &creds, None, None).into_response())
+    Ok(page(
+        &session,
+        &headers,
+        &creds,
+        default_gb_from_vpn(&state.paths.vpn_toml),
+        None,
+        None,
+    )
+    .into_response())
 }
 
 pub async fn users_save(
@@ -99,6 +141,10 @@ pub async fn users_save(
     let h2 = form_col(&map, "max_http2_conns");
     let h3 = form_col(&map, "max_http3_conns");
     let gb = form_col(&map, "max_traffic_gb");
+    let default_gb = form_col(&map, "default_traffic_gb")
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| default_gb_from_vpn(&state.paths.vpn_toml));
 
     creds.clients.clear();
     for (i, name) in names.iter().enumerate() {
@@ -117,6 +163,7 @@ pub async fn users_save(
                         &CredentialsToml {
                             clients: existing_clients,
                         },
+                        default_gb.clone(),
                         None,
                         Some(format!("password is required for user {name}")),
                     )
@@ -136,6 +183,7 @@ pub async fn users_save(
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.credentials_toml, &serialized)?;
+    patch_vpn_default_quota(&state.paths.vpn_toml, gib_field_to_bytes(&default_gb))?;
     let t = i18n::t(i18n::from_headers(&headers));
     let apply_result = apply(&state.paths, ApplyKind::FullRestart);
     let msg = crate::apply::format_apply(&t, &apply_result);
@@ -144,7 +192,15 @@ pub async fn users_save(
     } else {
         None
     };
-    let resp = page(&session, &headers, &creds, Some(msg), err).into_response();
+    let resp = page(
+        &session,
+        &headers,
+        &creds,
+        default_gb_from_vpn(&state.paths.vpn_toml),
+        Some(msg),
+        err,
+    )
+    .into_response();
     let s = if apply_result.is_err() {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
@@ -182,7 +238,14 @@ pub async fn users_delete(
         let msg = crate::apply::format_apply(&t, &apply_result);
         return Ok((
             StatusCode::INTERNAL_SERVER_ERROR,
-            page(&session, &headers, &creds, Some(msg.clone()), Some(msg)),
+            page(
+                &session,
+                &headers,
+                &creds,
+                default_gb_from_vpn(&state.paths.vpn_toml),
+                Some(msg.clone()),
+                Some(msg),
+            ),
         )
             .into_response());
     }
@@ -255,5 +318,19 @@ mod tests {
         assert_eq!(form_col(&map, "username"), vec!["alice", "test"]);
         assert_eq!(gib_field_to_bytes(&form_col(&map, "max_traffic_gb")[0]), 1_073_741_824);
         assert_eq!(gib_field_to_bytes(&form_col(&map, "max_traffic_gb")[1]), 0);
+    }
+
+    #[test]
+    fn patch_sets_default_quota_and_usage_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vpn.toml");
+        std::fs::write(&path, "listen_address = \"0.0.0.0:443\"\n").unwrap();
+        patch_vpn_default_quota(&path, 1_073_741_824).unwrap();
+        let s = std::fs::read_to_string(&path).unwrap();
+        assert!(s.contains("default_max_traffic_bytes_per_client = 1073741824"));
+        assert!(s.contains("traffic_usage_file"));
+        patch_vpn_default_quota(&path, 0).unwrap();
+        let s = std::fs::read_to_string(&path).unwrap();
+        assert!(!s.contains("default_max_traffic_bytes_per_client"));
     }
 }

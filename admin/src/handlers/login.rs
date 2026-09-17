@@ -64,14 +64,20 @@ pub async fn login_submit(
         return resp;
     }
 
-    let config = state.config.clone();
     let username = form.username.clone();
     let password = form.password.clone();
+    let admin_toml = state.paths.admin_toml.clone();
+    let mut file_hash = crate::config::AdminConfig::load_or_default(&admin_toml).bcrypt_hash;
+    if file_hash.is_empty() {
+        file_hash = state.bcrypt_hash.read().await.clone();
+    } else {
+        *state.bcrypt_hash.write().await = file_hash.clone();
+    }
     let verified = tokio::task::spawn_blocking(move || {
         if username != "admin" {
             return false;
         }
-        verify_password(&password, &config.bcrypt_hash)
+        verify_password(&password, &file_hash)
     })
     .await
     .unwrap_or(false);

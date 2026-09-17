@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -33,6 +33,26 @@ pub struct IpView {
     pub address: String,
     pub connected_h: String,
     pub kind: &'static str,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct GeoDetail {
+    pub query: String,
+    pub kind: &'static str,
+    pub country: String,
+    pub region: String,
+    pub city: String,
+    pub zip: String,
+    pub isp: String,
+    pub org: String,
+    pub asn: String,
+    pub timezone: String,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub mobile: bool,
+    pub proxy: bool,
+    pub hosting: bool,
+    pub map_url: String,
 }
 
 pub struct LiveCache {
@@ -123,16 +143,61 @@ impl LiveCache {
         }
         *last = Instant::now();
         drop(last);
-        let kind = fetch_geo(ip).unwrap_or(IpKind::Home);
-        save_disk_geo(ip, kind);
-        self.geo.lock().unwrap().insert(
-            ip.to_string(),
-            CachedGeo {
-                kind,
-                expire: Instant::now() + Duration::from_secs(86_400),
-            },
-        );
-        kind
+        if let Some(d) = fetch_geo_detail(ip) {
+            save_disk_geo_detail(ip, &d);
+            let kind = kind_from_flags(d.mobile, d.proxy, d.hosting);
+            self.geo.lock().unwrap().insert(
+                ip.to_string(),
+                CachedGeo {
+                    kind,
+                    expire: Instant::now() + Duration::from_secs(86_400),
+                },
+            );
+            return kind;
+        }
+        IpKind::Home
+    }
+
+    pub fn ip_detail(&self, ip: &str) -> GeoDetail {
+        if is_private_ip(ip) {
+            return GeoDetail {
+                query: ip.to_string(),
+                kind: IpKind::Home.as_str(),
+                ..GeoDetail::default()
+            };
+        }
+        if let Some(d) = disk_geo_detail(ip) {
+            if !(d.city.is_empty() && d.country.is_empty() && d.lat.is_none()) {
+                return d;
+            }
+        }
+        let mut last = self.last_lookup.lock().unwrap();
+        if last.elapsed() < Duration::from_secs(3) {
+            drop(last);
+            return disk_geo_detail(ip).unwrap_or(GeoDetail {
+                query: ip.to_string(),
+                kind: IpKind::Home.as_str(),
+                ..GeoDetail::default()
+            });
+        }
+        *last = Instant::now();
+        drop(last);
+        if let Some(d) = fetch_geo_detail(ip) {
+            save_disk_geo_detail(ip, &d);
+            self.geo.lock().unwrap().insert(
+                ip.to_string(),
+                CachedGeo {
+                    kind: kind_from_flags(d.mobile, d.proxy, d.hosting),
+                    expire: Instant::now() + Duration::from_secs(86_400),
+                },
+            );
+            return d;
+        }
+        GeoDetail {
+            query: ip.to_string(),
+            kind: self.lookup_kind(ip).as_str(),
+            ..GeoDetail::default()
+        }
     }
 }
 
@@ -194,17 +259,6 @@ fn disk_geo(ip: &str) -> Option<IpKind> {
     parse_geo_json(&s)
 }
 
-fn save_disk_geo(ip: &str, kind: IpKind) {
-    let _ = std::fs::create_dir_all(GEO_DIR);
-    let body = format!(
-        "{{\"mobile\":{},\"proxy\":{},\"hosting\":{}}}",
-        kind == IpKind::Mobile,
-        kind == IpKind::Proxy,
-        kind == IpKind::Hosting
-    );
-    let _ = std::fs::write(geo_path(ip), body);
-}
-
 fn geo_path(ip: &str) -> PathBuf {
     let slug: String = ip
         .chars()
@@ -214,28 +268,146 @@ fn geo_path(ip: &str) -> PathBuf {
 }
 
 fn parse_geo_json(s: &str) -> Option<IpKind> {
-    #[derive(Deserialize)]
-    struct G {
-        #[serde(default)]
-        mobile: bool,
-        #[serde(default)]
-        proxy: bool,
-        #[serde(default)]
-        hosting: bool,
-    }
-    let g: G = serde_json::from_str(s).ok()?;
-    if g.mobile {
-        Some(IpKind::Mobile)
-    } else if g.proxy {
-        Some(IpKind::Proxy)
-    } else if g.hosting {
-        Some(IpKind::Hosting)
+    let g = parse_geo_fields(s)?;
+    Some(kind_from_flags(g.mobile, g.proxy, g.hosting))
+}
+
+fn kind_from_flags(mobile: bool, proxy: bool, hosting: bool) -> IpKind {
+    if mobile {
+        IpKind::Mobile
+    } else if proxy {
+        IpKind::Proxy
+    } else if hosting {
+        IpKind::Hosting
     } else {
-        Some(IpKind::Home)
+        IpKind::Home
     }
 }
 
-fn fetch_geo(ip: &str) -> Option<IpKind> {
+#[derive(Deserialize, Default)]
+struct GeoFields {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    country: String,
+    #[serde(default, rename = "regionName")]
+    region_name: String,
+    #[serde(default)]
+    city: String,
+    #[serde(default)]
+    zip: String,
+    #[serde(default)]
+    lat: Option<f64>,
+    #[serde(default)]
+    lon: Option<f64>,
+    #[serde(default)]
+    timezone: String,
+    #[serde(default)]
+    isp: String,
+    #[serde(default)]
+    org: String,
+    #[serde(default, rename = "as")]
+    asn: String,
+    #[serde(default)]
+    mobile: bool,
+    #[serde(default)]
+    proxy: bool,
+    #[serde(default)]
+    hosting: bool,
+    #[serde(default)]
+    query: String,
+}
+
+fn parse_geo_fields(s: &str) -> Option<GeoFields> {
+    let g: GeoFields = serde_json::from_str(s).ok()?;
+    if !g.status.is_empty() && g.status != "success" {
+        return None;
+    }
+    Some(g)
+}
+
+fn detail_from_fields(ip: &str, g: GeoFields) -> GeoDetail {
+    let kind = kind_from_flags(g.mobile, g.proxy, g.hosting);
+    let mut map_url = String::new();
+    if let (Some(lat), Some(lon)) = (g.lat, g.lon) {
+        if lat != 0.0 || lon != 0.0 {
+            let pad = 0.35;
+            map_url = format!(
+                "https://www.openstreetmap.org/export/embed.html?bbox={left}%2C{bottom}%2C{right}%2C{top}&layer=mapnik&marker={lat}%2C{lon}",
+                left = lon - pad,
+                bottom = lat - pad,
+                right = lon + pad,
+                top = lat + pad,
+                lat = lat,
+                lon = lon
+            );
+        }
+    }
+    GeoDetail {
+        query: if g.query.is_empty() {
+            ip.to_string()
+        } else {
+            g.query
+        },
+        kind: kind.as_str(),
+        country: g.country,
+        region: g.region_name,
+        city: g.city,
+        zip: g.zip,
+        isp: g.isp,
+        org: g.org,
+        asn: g.asn,
+        timezone: g.timezone,
+        lat: g.lat,
+        lon: g.lon,
+        mobile: g.mobile,
+        proxy: g.proxy,
+        hosting: g.hosting,
+        map_url,
+    }
+}
+
+fn disk_geo_detail(ip: &str) -> Option<GeoDetail> {
+    let path = geo_path(ip);
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta.modified().ok()?;
+    if SystemTime::now().duration_since(mtime).ok()? > Duration::from_secs(86_400) {
+        return None;
+    }
+    let s = std::fs::read_to_string(&path).ok()?;
+    let g = parse_geo_fields(&s)?;
+    Some(detail_from_fields(ip, g))
+}
+
+fn save_disk_geo_detail(ip: &str, d: &GeoDetail) {
+    let _ = std::fs::create_dir_all(GEO_DIR);
+    let body = serde_json::json!({
+        "status": "success",
+        "country": d.country,
+        "regionName": d.region,
+        "city": d.city,
+        "zip": d.zip,
+        "lat": d.lat,
+        "lon": d.lon,
+        "timezone": d.timezone,
+        "isp": d.isp,
+        "org": d.org,
+        "as": d.asn,
+        "mobile": d.mobile,
+        "proxy": d.proxy,
+        "hosting": d.hosting,
+        "query": d.query,
+    });
+    let _ = std::fs::write(geo_path(ip), body.to_string());
+}
+
+fn fetch_geo_detail(ip: &str) -> Option<GeoDetail> {
+    let body = http_get_ip_api(ip)?;
+    let g = parse_geo_fields(&body)?;
+    Some(detail_from_fields(ip, g))
+}
+
+fn http_get_ip_api(ip: &str) -> Option<String> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::net::ToSocketAddrs;
@@ -243,7 +415,9 @@ fn fetch_geo(ip: &str) -> Option<IpKind> {
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800)).ok()?;
     stream.set_read_timeout(Some(Duration::from_millis(1200))).ok()?;
     stream.set_write_timeout(Some(Duration::from_secs(1))).ok()?;
-    let path = format!("/json/{ip}?fields=status,mobile,proxy,hosting");
+    let path = format!(
+        "/json/{ip}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query"
+    );
     let req = format!("GET {path} HTTP/1.0\r\nHost: ip-api.com\r\n\r\n");
     stream.write_all(req.as_bytes()).ok()?;
     let mut buf = Vec::new();
@@ -261,17 +435,31 @@ fn fetch_geo(ip: &str) -> Option<IpKind> {
         }
     }
     let text = String::from_utf8_lossy(&buf);
-    let body = text.split("\r\n\r\n").nth(1)?;
-    parse_geo_json(body)
+    Some(text.split("\r\n\r\n").nth(1)?.to_string())
 }
 
 pub fn parse_host_snapshot() -> HostSnapshot {
+    let load = read_load();
+    let ram = read_ram();
+    let disk = read_disk();
+    let load_n: f64 = load.parse().unwrap_or(0.0);
+    let cpus = cpu_count();
+    let load_pct = if cpus > 0.0 {
+        (load_n / cpus * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    let ram_pct = parse_pct(&ram);
+    let disk_pct = parse_pct(&disk);
     HostSnapshot {
-        load: read_load(),
-        ram: read_ram(),
-        disk: read_disk(),
+        load,
+        ram,
+        disk,
         uptime: read_host_uptime(),
         version: read_tt_version(),
+        load_color: heat_color(load_pct),
+        ram_color: heat_color(ram_pct),
+        disk_color: heat_color(disk_pct),
     }
 }
 
@@ -282,6 +470,48 @@ pub struct HostSnapshot {
     pub disk: String,
     pub uptime: String,
     pub version: String,
+    pub load_color: String,
+    pub ram_color: String,
+    pub disk_color: String,
+}
+
+pub fn parse_pct(s: &str) -> f64 {
+    let digits: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    digits.parse().unwrap_or(0.0)
+}
+
+pub fn heat_color(pct: f64) -> String {
+    let p = pct.clamp(0.0, 100.0) / 100.0;
+    let (r, g, b) = if p <= 0.5 {
+        lerp_rgb((22, 163, 74), (202, 138, 4), p * 2.0)
+    } else {
+        lerp_rgb((202, 138, 4), (220, 38, 38), (p - 0.5) * 2.0)
+    };
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+fn lerp_rgb(a: (u8, u8, u8), b: (u8, u8, u8), t: f64) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    (
+        (a.0 as f64 + (b.0 as f64 - a.0 as f64) * t).round() as u8,
+        (a.1 as f64 + (b.1 as f64 - a.1 as f64) * t).round() as u8,
+        (a.2 as f64 + (b.2 as f64 - a.2 as f64) * t).round() as u8,
+    )
+}
+
+fn cpu_count() -> f64 {
+    std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .map(|s| {
+            s.lines()
+                .filter(|l| l.starts_with("processor"))
+                .count()
+                .max(1) as f64
+        })
+        .unwrap_or(1.0)
 }
 
 fn read_load() -> String {
@@ -447,5 +677,14 @@ mod tests {
             parse_geo_json("{\"mobile\":false,\"proxy\":false,\"hosting\":false}"),
             Some(IpKind::Home)
         );
+    }
+
+    #[test]
+    fn heat_color_transitions() {
+        assert_eq!(heat_color(0.0), "#16a34a");
+        assert_eq!(heat_color(50.0), "#ca8a04");
+        assert_eq!(heat_color(100.0), "#dc2626");
+        assert_eq!(parse_pct("84%"), 84.0);
+        assert_eq!(parse_pct("33% (321/961 MB)"), 33.0);
     }
 }

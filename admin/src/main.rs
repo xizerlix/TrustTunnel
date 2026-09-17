@@ -66,6 +66,8 @@ async fn serve(
             paths.root.display()
         );
     }
+    let mut paths = paths;
+    paths.admin_toml = admin_toml.clone();
     let mut config = AdminConfig::load_or_default(&admin_toml);
     config.bind = bind;
     if !config.is_initialized() {
@@ -73,10 +75,12 @@ async fn serve(
             "admin not initialized; run `trusttunnel_admin init-admin` first"
         );
     }
+    let bcrypt_hash = Arc::new(tokio::sync::RwLock::new(config.bcrypt_hash.clone()));
     let config = Arc::new(config);
 
     let state = AppState {
         config,
+        bcrypt_hash,
         paths: Arc::new(paths),
         sessions: SessionStore::new(),
         login_limiter: LoginLimiter::new(),
@@ -123,6 +127,12 @@ fn build_router(state: AppState) -> Router {
         .route("/lang", get(handlers::login::set_lang))
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/dashboard/data", get(handlers::dashboard::dashboard_data))
+        .route("/dashboard/ip", get(handlers::dashboard::ip_lookup))
+        .route(
+            "/dashboard/service",
+            post(handlers::dashboard::service_restart),
+        )
+        .route("/dashboard/reboot", post(handlers::dashboard::host_reboot))
         .route(
             "/vpn",
             get(handlers::vpn::vpn_form).post(handlers::vpn::vpn_save),

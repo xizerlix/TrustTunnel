@@ -209,6 +209,10 @@ protocol/deep-link format, library API) when relevant.
    `read_to_end` times out and the dashboard shows zero sessions.
    Login attempts MUST be rate-limited per source IP and globally (bcrypt is
    expensive on a 1-CPU host). Trust `X-Forwarded-For` only from loopback.
+   Admin password changes MUST write `bcrypt_hash` to the CLI `--admin-toml`
+   path (not a hardcoded `/etc/trusttunnel/admin.toml`) and update the
+   in-memory hash; login MUST re-read that file. Unique client-IP caps are
+   not in the protocol — only `max_http2_conns` / `max_http3_conns`.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

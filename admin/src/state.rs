@@ -4,10 +4,12 @@ use crate::live::{HostSnapshot, LiveCache};
 use crate::paths::TrustTunnelPaths;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<AdminConfig>,
+    pub bcrypt_hash: Arc<RwLock<String>>,
     pub paths: Arc<TrustTunnelPaths>,
     pub sessions: Arc<SessionStore>,
     pub login_limiter: Arc<LoginLimiter>,

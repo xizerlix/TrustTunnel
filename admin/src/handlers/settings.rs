@@ -57,7 +57,15 @@ pub async fn settings_password(
     if form.new_password.len() < 10 {
         return Err(AdminError::Validation("password must be at least 10 characters".into()));
     }
-    let current_hash = state.config.bcrypt_hash.clone();
+    let current_hash = {
+        let file_hash =
+            crate::config::AdminConfig::load_or_default(&state.paths.admin_toml).bcrypt_hash;
+        if file_hash.is_empty() {
+            state.bcrypt_hash.read().await.clone()
+        } else {
+            file_hash
+        }
+    };
     let current = form.current_password.clone();
     let ok = tokio::task::spawn_blocking(move || {
         crate::config::verify_password(&current, &current_hash)
@@ -72,8 +80,9 @@ pub async fn settings_password(
         .map_err(|e| AdminError::Apply(format!("hashing task: {e}")))?
         .map_err(|e| AdminError::Apply(format!("hash: {e}")))?;
     let mut cfg: AdminConfig = (*state.config).clone();
-    cfg.bcrypt_hash = new_hash;
+    cfg.bcrypt_hash = new_hash.clone();
     cfg.save(&state.paths.admin_toml)?;
+    *state.bcrypt_hash.write().await = new_hash;
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
     let status = Some(t.password_updated.to_string());

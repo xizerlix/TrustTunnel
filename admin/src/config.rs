@@ -34,6 +34,11 @@ impl AdminConfig {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(path, toml::to_string_pretty(self)?)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
         Ok(())
     }
 
@@ -48,4 +53,20 @@ pub fn hash_password(plain: &str) -> anyhow::Result<String> {
 
 pub fn verify_password(plain: &str, hash: &str) -> bool {
     bcrypt::verify(plain, hash).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_then_load_hash_from_same_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("admin.toml");
+        let mut cfg = AdminConfig::default();
+        cfg.bcrypt_hash = "stored-hash".into();
+        cfg.save(&path).unwrap();
+        let loaded = AdminConfig::load_or_default(&path);
+        assert_eq!(loaded.bcrypt_hash, "stored-hash");
+    }
 }

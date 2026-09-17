@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   SNI textarea, save spinner, system journal + htop tabs, and form
   parsing that allows adding a second user or rule without
   `duplicate field`. Login is rate-limited per IP and globally.
+- [Feature] Admin console: dashboard CPU/RAM/disk heat colors, service
+  restart and host reboot, click-IP geo map, Users default traffic
+  quota (GiB), logs tab renamed to top.
+- [Fix] Admin password change writes the CLI `--admin-toml` file and
+  the in-memory hash so the next login uses the new password.
 - [Feature] Admin console: mobile burger nav, live host CPU/RAM/disk
   on the dashboard poll, certificate nested in the server card, log
   text auto-refresh without a full page reload, translated VPN help,

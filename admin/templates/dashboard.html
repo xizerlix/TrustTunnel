@@ -5,10 +5,34 @@
 <div id="dashboard-data">
 {% include "dashboard_data.html" %}
 </div>
+
+<div id="ip-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+      <h2 id="ip-modal-title" class="font-semibold text-sm">{{ t.geo_title }}</h2>
+      <button type="button" id="ip-modal-close" class="text-slate-500 text-sm">{{ t.close }}</button>
+    </div>
+    <div id="ip-modal-body" class="p-4 text-sm"></div>
+  </div>
+</div>
+
+<div id="dash-i18n" class="hidden"
+     data-reboot-confirm="{{ t.reboot_confirm }}"
+     data-geo-loading="{{ t.geo_loading }}"
+     data-geo-error="{{ t.geo_error }}"
+     data-geo-private="{{ t.geo_private }}"></div>
+
 <script>
 (function () {
   var root = document.getElementById('dashboard-data');
   if (!root) return;
+  var i18n = document.getElementById('dash-i18n');
+  var modal = document.getElementById('ip-modal');
+  var modalBody = document.getElementById('ip-modal-body');
+  var modalTitle = document.getElementById('ip-modal-title');
+  function csrf() {
+    return document.querySelector('meta[name="csrf-token"]')?.content || '';
+  }
   function tick() {
     fetch('/dashboard/data', { credentials: 'same-origin', redirect: 'manual' })
       .then(function (r) {
@@ -25,6 +49,93 @@
       .catch(function () {});
   }
   setInterval(tick, 5000);
+
+  function postOp(url) {
+    return fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'x-csrf-token': csrf() }
+    }).then(function (r) { return r.json().catch(function () { return {}; }); });
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var restart = t.closest('.js-svc-restart');
+    if (restart) {
+      restart.disabled = true;
+      postOp('/dashboard/service').then(function (j) {
+        if (j && j.message) alert(j.message);
+        tick();
+      }).catch(function () {}).then(function () { restart.disabled = false; });
+      return;
+    }
+    var reboot = t.closest('.js-host-reboot');
+    if (reboot) {
+      if (!confirm(i18n.getAttribute('data-reboot-confirm'))) return;
+      reboot.disabled = true;
+      postOp('/dashboard/reboot').then(function (j) {
+        if (j && j.message) alert(j.message);
+      }).catch(function () {}).then(function () { reboot.disabled = false; });
+      return;
+    }
+    var ipBtn = t.closest('.js-ip');
+    if (ipBtn) {
+      var ip = ipBtn.getAttribute('data-ip') || '';
+      openIp(ip);
+    }
+  });
+
+  function openIp(ip) {
+    modal.classList.remove('hidden');
+    modalTitle.textContent = ip;
+    modalBody.textContent = i18n.getAttribute('data-geo-loading');
+    fetch('/dashboard/ip?ip=' + encodeURIComponent(ip), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok === false) {
+          modalBody.textContent = i18n.getAttribute('data-geo-error');
+          return;
+        }
+        var html = '';
+        if (d.map_url) {
+          html += '<iframe class="w-full h-44 rounded mb-3 border-0" src="' + d.map_url + '"></iframe>';
+        } else {
+          html += '<p class="text-slate-500 mb-2">' + i18n.getAttribute('data-geo-private') + '</p>';
+        }
+        function row(k, v) {
+          if (!v) return;
+          html += '<div class="flex gap-2 py-0.5"><span class="text-slate-500 w-24 shrink-0">' + k + '</span><span class="break-all">' + v + '</span></div>';
+        }
+        row('IP', d.query || ip);
+        row('kind', d.kind);
+        row('country', d.country);
+        row('region', d.region);
+        row('city', d.city);
+        row('zip', d.zip);
+        row('ISP', d.isp);
+        row('org', d.org);
+        row('AS', d.asn);
+        row('tz', d.timezone);
+        if (d.lat != null && d.lon != null) row('lat/lon', d.lat + ', ' + d.lon);
+        var flags = [];
+        if (d.mobile) flags.push('mobile');
+        if (d.proxy) flags.push('proxy');
+        if (d.hosting) flags.push('hosting');
+        if (flags.length) row('flags', flags.join(', '));
+        modalBody.innerHTML = html;
+      })
+      .catch(function () {
+        modalBody.textContent = i18n.getAttribute('data-geo-error');
+      });
+  }
+
+  document.getElementById('ip-modal-close').addEventListener('click', function () {
+    modal.classList.add('hidden');
+  });
+  modal.addEventListener('click', function (e) {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
 })();
 </script>
 {% endblock %}

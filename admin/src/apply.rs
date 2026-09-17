@@ -27,12 +27,29 @@ pub fn atomic_write(path: &Path, content: &str) -> AdminResult<()> {
 }
 
 pub fn systemctl_restart(service: &str) -> AdminResult<()> {
-    let status = Command::new("systemctl")
-        .args(["restart", service])
+    run_systemctl(&["restart", service])
+}
+
+pub fn systemctl_reboot() -> AdminResult<()> {
+    run_systemctl(&["reboot"])
+}
+
+fn run_systemctl(args: &[&str]) -> AdminResult<()> {
+    let status = Command::new("systemctl").args(args).status();
+    if let Ok(status) = status {
+        if status.success() {
+            return Ok(());
+        }
+    }
+    let status = Command::new("sudo")
+        .arg("-n")
+        .arg("systemctl")
+        .args(args)
         .status()?;
     if !status.success() {
         return Err(AdminError::Apply(format!(
-            "systemctl restart {service} failed: {status}"
+            "systemctl {} failed: {status}",
+            args.join(" ")
         )));
     }
     Ok(())

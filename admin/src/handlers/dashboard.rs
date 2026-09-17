@@ -1,14 +1,18 @@
-use crate::apply::{read_clients_json, read_prometheus_metrics, systemctl_show};
-use crate::auth::Authenticated;
+use crate::apply::{
+    read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_restart, systemctl_show,
+    wait_active,
+};
+use crate::auth::{verify_csrf, Authenticated};
 use crate::i18n::{self, I18n};
 use crate::live::IpView;
 use crate::models::{CredentialsToml, HostsToml, VpnToml};
 use crate::state::AppState;
 use askama::Template;
-use axum::extract::State;
-use axum::http::HeaderMap;
+use axum::extract::{Query, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::Deserialize;
+use axum::Json;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -37,6 +41,9 @@ pub struct DashboardTemplate {
     pub host_ram: String,
     pub host_disk: String,
     pub host_uptime: String,
+    pub host_load_color: String,
+    pub host_ram_color: String,
+    pub host_disk_color: String,
     pub cert_subject: String,
     pub cert_expiry: String,
 }
@@ -60,6 +67,9 @@ pub struct DashboardDataTemplate {
     pub host_ram: String,
     pub host_disk: String,
     pub host_uptime: String,
+    pub host_load_color: String,
+    pub host_ram_color: String,
+    pub host_disk_color: String,
     pub cert_subject: String,
     pub cert_expiry: String,
 }
@@ -540,6 +550,9 @@ struct Stats {
     host_ram: String,
     host_disk: String,
     host_uptime: String,
+    host_load_color: String,
+    host_ram_color: String,
+    host_disk_color: String,
     cert_subject: String,
     cert_expiry: String,
 }
@@ -749,6 +762,9 @@ async fn collect(state: &AppState) -> Stats {
         host_ram: host.ram,
         host_disk: host.disk,
         host_uptime: host.uptime,
+        host_load_color: host.load_color,
+        host_ram_color: host.ram_color,
+        host_disk_color: host.disk_color,
         cert_subject,
         cert_expiry,
     }
@@ -772,6 +788,9 @@ fn fill_data(stats: Stats, t: I18n) -> DashboardDataTemplate {
         host_ram: stats.host_ram,
         host_disk: stats.host_disk,
         host_uptime: stats.host_uptime,
+        host_load_color: stats.host_load_color,
+        host_ram_color: stats.host_ram_color,
+        host_disk_color: stats.host_disk_color,
         cert_subject: stats.cert_subject,
         cert_expiry: stats.cert_expiry,
     }
@@ -807,6 +826,9 @@ pub async fn dashboard(
         host_ram: data.host_ram,
         host_disk: data.host_disk,
         host_uptime: data.host_uptime,
+        host_load_color: data.host_load_color,
+        host_ram_color: data.host_ram_color,
+        host_disk_color: data.host_disk_color,
         cert_subject: data.cert_subject,
         cert_expiry: data.cert_expiry,
     }
@@ -821,6 +843,116 @@ pub async fn dashboard_data(
     let t = i18n::t(i18n::from_headers(&headers));
     let stats = collect(&state).await;
     fill_data(stats, t).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct IpQuery {
+    pub ip: String,
+}
+
+#[derive(Serialize)]
+struct OpJson {
+    ok: bool,
+    message: String,
+}
+
+pub async fn ip_lookup(
+    State(state): State<AppState>,
+    Authenticated(_session): Authenticated,
+    Query(q): Query<IpQuery>,
+) -> Response {
+    let ip = q.ip.trim().to_string();
+    if ip.parse::<std::net::IpAddr>().is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OpJson {
+                ok: false,
+                message: "invalid ip".into(),
+            }),
+        )
+            .into_response();
+    }
+    let live = state.live.clone();
+    let detail = tokio::task::spawn_blocking(move || live.ip_detail(&ip))
+        .await
+        .unwrap_or_default();
+    Json(detail).into_response()
+}
+
+pub async fn service_restart(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+) -> Response {
+    if verify_csrf(&headers, &session).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(OpJson {
+                ok: false,
+                message: "csrf".into(),
+            }),
+        )
+            .into_response();
+    }
+    let name = state.paths.service_name.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        systemctl_restart(&name)?;
+        wait_active(&name, Duration::from_secs(15))
+    })
+    .await
+    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    let t = i18n::t(i18n::from_headers(&headers));
+    match result {
+        Ok(()) => Json(OpJson {
+            ok: true,
+            message: t.apply_restarted.into(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OpJson {
+                ok: false,
+                message: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn host_reboot(
+    State(_state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+) -> Response {
+    if verify_csrf(&headers, &session).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(OpJson {
+                ok: false,
+                message: "csrf".into(),
+            }),
+        )
+            .into_response();
+    }
+    let result = tokio::task::spawn_blocking(systemctl_reboot)
+        .await
+        .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    let t = i18n::t(i18n::from_headers(&headers));
+    match result {
+        Ok(()) => Json(OpJson {
+            ok: true,
+            message: t.rebooting.into(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OpJson {
+                ok: false,
+                message: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[cfg(test)]

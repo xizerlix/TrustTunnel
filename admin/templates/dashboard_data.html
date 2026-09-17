@@ -14,16 +14,20 @@
         {% if let Some(u) = since_label %} {{ u }}{% else %} — {{ t.unknown }}{% endif %}
       </div>
     {% endif %}
+    <button type="button" class="js-svc-restart mt-3 px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700">
+      {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
+    </button>
   </div>
   <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 sm:col-span-2 xl:col-span-1">
     <div class="text-sm text-slate-500">{{ t.host }}</div>
     <div class="text-lg font-semibold mt-1 break-all">{{ host_version }}</div>
-    <dl class="mt-2 text-xs text-slate-600 space-y-0.5">
-      <div>{{ t.cpu }}: {{ host_load }}</div>
-      <div>{{ t.ram }}: {{ host_ram }}</div>
-      <div>{{ t.disk }}: {{ host_disk }}</div>
-      <div>{{ t.host_uptime }}: {{ host_uptime }}</div>
+    <dl class="mt-2 text-xs space-y-0.5">
+      <div>{{ t.cpu }}: <span style="color: {{ host_load_color }}">{{ host_load }}</span></div>
+      <div>{{ t.ram }}: <span style="color: {{ host_ram_color }}">{{ host_ram }}</span></div>
+      <div>{{ t.disk }}: <span style="color: {{ host_disk_color }}">{{ host_disk }}</span></div>
+      <div class="text-slate-600">{{ t.host_uptime }}: {{ host_uptime }}</div>
     </dl>
+    <button type="button" class="js-host-reboot mt-3 px-3 py-1.5 text-xs font-medium rounded bg-rose-600 text-white hover:bg-rose-700">{{ t.reboot_host }}</button>
     <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600">
       <div class="text-slate-500 mb-0.5">{{ t.certificates }}</div>
       {% if cert_subject.is_empty() %}
@@ -98,7 +102,7 @@
                 {% endif %}
               {% endif %}
             {% endif %}
-            <span>{{ ip.address }}</span>
+            <button type="button" class="js-ip font-mono text-indigo-600 underline decoration-dotted text-left" data-ip="{{ ip.address }}">{{ ip.address }}</button>
             <span class="text-slate-400">{{ ip.connected_h }}</span>
           </div>
           {% endfor %}
