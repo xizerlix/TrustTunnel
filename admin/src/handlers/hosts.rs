@@ -140,17 +140,17 @@ mod tests {
     #[test]
     fn single_hostname_saves_as_one_host() {
         let form = HostsForm {
-            main_hostname: vec!["watafa.duckdns.org".into()],
+            main_hostname: vec!["vpn.example.com".into()],
             main_cert: vec!["/certs/fullchain.pem".into()],
             main_key: vec!["/certs/privkey.pem".into()],
-            main_allowed_sni: vec!["watafa.duckdns.org\nalias.example".into()],
+            main_allowed_sni: vec!["vpn.example.com\nalias.example".into()],
         };
         let hosts = form.into_main_hosts();
         assert_eq!(hosts.len(), 1);
-        assert_eq!(hosts[0].hostname, "watafa.duckdns.org");
+        assert_eq!(hosts[0].hostname, "vpn.example.com");
         assert_eq!(
             hosts[0].allowed_sni,
-            vec!["watafa.duckdns.org", "alias.example"]
+            vec!["vpn.example.com", "alias.example"]
         );
     }
 

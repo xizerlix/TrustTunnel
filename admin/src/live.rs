@@ -622,15 +622,38 @@ pub fn read_cert_summary(cert_path: &str) -> Option<(String, String)> {
     }
 }
 
+fn second_top_frame(raw: &str) -> Option<String> {
+    let lines: Vec<&str> = raw.lines().collect();
+    let starts: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with("top -") || l.starts_with("top "))
+        .map(|(i, _)| i)
+        .collect();
+    let start = *starts.get(1).or_else(|| starts.first())?;
+    Some(lines[start..].iter().copied().take(50).collect::<Vec<_>>().join("\n"))
+}
+
+fn run_top(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("top")
+        .args(args)
+        .env("LC_ALL", "C")
+        .env("COLUMNS", "180")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    second_top_frame(&s)
+}
+
 pub fn htop_snapshot() -> String {
-    let top = std::process::Command::new("top")
-        .args(["-b", "-n", "1", "-w", "180"])
-        .output();
-    if let Ok(out) = top {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            return s.lines().take(40).collect::<Vec<_>>().join("\n");
-        }
+    if let Some(s) = run_top(&["-b", "-n", "2", "-d", "0.5", "-w", "180", "-o", "%CPU"]) {
+        return s;
+    }
+    if let Some(s) = run_top(&["-b", "-n", "2", "-d", "0.5", "-w", "180"]) {
+        return s;
     }
     let ps = std::process::Command::new("ps")
         .args(["-eo", "pid,user,pcpu,pmem,comm", "--sort=-pcpu"])
@@ -677,6 +700,24 @@ mod tests {
             parse_geo_json("{\"mobile\":false,\"proxy\":false,\"hosting\":false}"),
             Some(IpKind::Home)
         );
+    }
+
+    #[test]
+    fn second_top_frame_keeps_later_sample() {
+        let raw = "\
+top - 00:00:00 up 1 min,  0 users,  load average: 0.00, 0.00, 0.00
+%Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+      1 root      20   0       0      0      0 S   0.0   0.0   0:00.00 systemd
+top - 00:00:01 up 1 min,  0 users,  load average: 0.00, 0.00, 0.00
+%Cpu(s):  1.2 us,  0.4 sy,  0.0 ni, 98.4 id
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+    100 vpn       20   0    9999   1111   2222 S   4.0   1.0   0:01.00 trusttunnel_endpoint
+";
+        let frame = second_top_frame(raw).unwrap();
+        assert!(frame.contains("trusttunnel_endpoint"));
+        assert!(frame.contains("1.2 us"));
+        assert!(!frame.contains("100.0 id"));
     }
 
     #[test]

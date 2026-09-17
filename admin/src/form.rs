@@ -113,8 +113,8 @@ mod tests {
 
     #[test]
     fn single_string_becomes_vec() {
-        let row: Row = serde_urlencoded::from_str("main_hostname=watafa.duckdns.org").unwrap();
-        assert_eq!(row.main_hostname, vec!["watafa.duckdns.org"]);
+        let row: Row = serde_urlencoded::from_str("main_hostname=vpn.example.com").unwrap();
+        assert_eq!(row.main_hostname, vec!["vpn.example.com"]);
     }
 
     #[test]

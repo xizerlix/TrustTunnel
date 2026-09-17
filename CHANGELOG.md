@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the in-memory hash so the next login uses the new password.
 - [Fix] Dashboard keeps spent traffic for users deleted from
   `credentials.toml` and marks those rows as removed.
+- [Fix] Admin Logs → top uses the second `top -b` sample so CPU% matches
+  an interactive SSH `top`, not the all-zero first frame.
 - [Feature] Admin console: mobile burger nav, live host CPU/RAM/disk
   on the dashboard poll, certificate nested in the server card, log
   text auto-refresh without a full page reload, translated VPN help,

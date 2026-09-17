@@ -216,6 +216,8 @@ protocol/deep-link format, library API) when relevant.
    The admin dashboard SHOULD keep rows for usernames that still have
    `traffic_usage_file` (or live) counters after they were deleted from
    `credentials.toml`, and MUST label those rows as removed.
+   Admin Logs → top MUST sample `top -b` twice and display the second
+   frame: the first batch iteration reports 0% CPU and lists tasks by PID.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each
