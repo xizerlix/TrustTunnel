@@ -2,6 +2,7 @@ use crate::auth::{LoginLimiter, SessionStore};
 use crate::config::AdminConfig;
 use crate::live::{HostSnapshot, LiveCache};
 use crate::paths::TrustTunnelPaths;
+use crate::telegram::Telegram;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -16,6 +17,7 @@ pub struct AppState {
     pub secure_cookies: bool,
     pub live: Arc<LiveCache>,
     pub slow: Arc<SlowInfo>,
+    pub telegram: Option<Telegram>,
 }
 
 pub struct SlowInfo {

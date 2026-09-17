@@ -218,6 +218,10 @@ protocol/deep-link format, library API) when relevant.
    `credentials.toml`, and MUST label those rows as removed.
    Admin Logs → top MUST sample `top -b` twice and display the second
    frame: the first batch iteration reports 0% CPU and lists tasks by PID.
+   Admin login success, failed password, and rate-limit events SHOULD notify
+   Telegram using the same `TOKEN` / `MY_CHAT_ID` as `/root/bot_listener.sh`
+   (or `TT_TELEGRAM_BOT_TOKEN` / `TT_TELEGRAM_CHAT_ID` / `TT_TELEGRAM_SCRIPT`).
+   Do not put bot tokens in the git repository.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

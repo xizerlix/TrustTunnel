@@ -77,6 +77,7 @@ pub struct LoginLimiter {
 
 struct LoginBucket {
     count: u32,
+    limited_notified: bool,
     window_start: Instant,
 }
 
@@ -84,6 +85,7 @@ impl Default for LoginBucket {
     fn default() -> Self {
         Self {
             count: 0,
+            limited_notified: false,
             window_start: Instant::now(),
         }
     }
@@ -94,18 +96,29 @@ impl LoginLimiter {
         Arc::new(Self::default())
     }
 
-    pub async fn check(&self, ip: IpAddr, per_ip: u32, global_per_min: u32) -> bool {
+    /// Returns `(allowed, notify_rate_limit)` — Telegram only on the first
+    /// rejection in the current window, not on every extra POST.
+    pub async fn check(&self, ip: IpAddr, per_ip: u32, global_per_min: u32) -> (bool, bool) {
         let mut global = self.global.write().await;
         let mut ips = self.inner.write().await;
         reset_bucket(&mut global);
         let bucket = ips.entry(ip).or_default();
         reset_bucket(bucket);
         if global.count >= global_per_min || bucket.count >= per_ip {
-            return false;
+            let notify = if bucket.count >= per_ip {
+                let n = !bucket.limited_notified;
+                bucket.limited_notified = true;
+                n
+            } else {
+                let n = !global.limited_notified;
+                global.limited_notified = true;
+                n
+            };
+            return (false, notify);
         }
         global.count = global.count.saturating_add(1);
         bucket.count = bucket.count.saturating_add(1);
-        true
+        (true, false)
     }
 
     pub async fn cleanup_expired(&self) {
@@ -117,6 +130,7 @@ impl LoginLimiter {
 fn reset_bucket(bucket: &mut LoginBucket) {
     if bucket.window_start.elapsed() > Duration::from_secs(60) {
         bucket.count = 0;
+        bucket.limited_notified = false;
         bucket.window_start = Instant::now();
     }
 }
@@ -299,9 +313,14 @@ mod tests {
         let limiter = LoginLimiter::new();
         let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
         for _ in 0..3 {
-            assert!(limiter.check(ip, 3, 10).await);
+            assert!(limiter.check(ip, 3, 10).await.0);
         }
-        assert!(!limiter.check(ip, 3, 10).await);
+        let (ok, notify) = limiter.check(ip, 3, 10).await;
+        assert!(!ok);
+        assert!(notify);
+        let (ok, notify) = limiter.check(ip, 3, 10).await;
+        assert!(!ok);
+        assert!(!notify);
     }
 
     #[tokio::test]
@@ -309,8 +328,8 @@ mod tests {
         let limiter = LoginLimiter::new();
         let a = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
         let b = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 2));
-        assert!(limiter.check(a, 5, 1).await);
-        assert!(!limiter.check(b, 5, 1).await);
+        assert!(limiter.check(a, 5, 1).await.0);
+        assert!(!limiter.check(b, 5, 1).await.0);
     }
 }
 

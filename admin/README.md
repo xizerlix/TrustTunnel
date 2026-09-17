@@ -12,6 +12,10 @@ SSH.
 - Edits rules in `rules.toml` (CIDR + client-random-prefix + allow/deny).
 - Shows a live dashboard with TrustTunnel status, active sessions, traffic.
 - Shows the last N lines of `journalctl -u trusttunnel`.
+- On login success, bad password, or too many attempts, sends a Telegram
+  message through the same bot as `bot_listener.sh` (`TOKEN` / `MY_CHAT_ID`
+  at `/root/bot_listener.sh`, or `TT_TELEGRAM_BOT_TOKEN` +
+  `TT_TELEGRAM_CHAT_ID`).
 - Save → atomic write → `systemctl restart trusttunnel` for vpn/creds/rules,
   and `kill -HUP` for `hosts.toml` (no full restart).
 - Single admin user with bcrypt-hashed password stored in
@@ -119,6 +123,8 @@ admin/
 │   ├── auth.rs           # session cookies, login rate limit
 │   ├── state.rs          # AppState
 │   ├── apply.rs          # atomic write, systemctl, kill -HUP
+│   ├── live.rs
+│   ├── telegram.rs       # login alerts via bot_listener TOKEN/chat
 │   ├── models.rs         # DTOs that mirror vpn.toml etc.
 │   ├── error.rs          # AdminError + IntoResponse
 │   └── handlers/

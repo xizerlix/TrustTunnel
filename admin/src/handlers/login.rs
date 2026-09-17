@@ -52,11 +52,14 @@ pub async fn login_submit(
 ) -> Response {
     let ip = login_ip(&headers, Some(addr.ip()));
     let global = state.config.login_rate_per_min.saturating_mul(3).max(8);
-    if !state
+    let (allowed, notify_limited) = state
         .login_limiter
         .check(ip, state.config.login_rate_per_min, global)
-        .await
-    {
+        .await;
+    if !allowed {
+        if notify_limited {
+            notify_tg(state.telegram.clone(), move |tg| tg.notify_login_limited(ip));
+        }
         let t = i18n::t(i18n::from_headers(&headers));
         let mut resp = login_page(&headers, Some(t.too_many_logins.into()), form.username)
             .into_response();
@@ -83,6 +86,10 @@ pub async fn login_submit(
     .unwrap_or(false);
 
     if !verified {
+        let attempted = form.username.clone();
+        notify_tg(state.telegram.clone(), move |tg| {
+            tg.notify_login_fail(ip, &attempted)
+        });
         tokio::time::sleep(Duration::from_millis(300)).await;
         let t = i18n::t(i18n::from_headers(&headers));
         let mut resp =
@@ -91,6 +98,7 @@ pub async fn login_submit(
         return resp;
     }
 
+    notify_tg(state.telegram.clone(), move |tg| tg.notify_login_ok(ip));
     let session = state
         .sessions
         .create("admin", Duration::from_secs(state.config.session_ttl_secs))
@@ -175,6 +183,15 @@ pub async fn set_lang(Query(q): Query<LangQuery>, headers: HeaderMap) -> Respons
         h.insert(axum::http::header::SET_COOKIE, v);
     }
     (h, Redirect::to(&next)).into_response()
+}
+
+fn notify_tg(
+    telegram: Option<crate::telegram::Telegram>,
+    f: impl FnOnce(&crate::telegram::Telegram) + Send + 'static,
+) {
+    if let Some(tg) = telegram {
+        tokio::task::spawn_blocking(move || f(&tg));
+    }
 }
 
 fn safe_path(s: &str) -> Option<String> {

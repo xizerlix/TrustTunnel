@@ -9,6 +9,7 @@ mod live;
 mod models;
 mod paths;
 mod state;
+mod telegram;
 
 use crate::auth::{LoginLimiter, SessionStore};
 use crate::config::AdminConfig;
@@ -77,6 +78,12 @@ async fn serve(
     }
     let bcrypt_hash = Arc::new(tokio::sync::RwLock::new(config.bcrypt_hash.clone()));
     let config = Arc::new(config);
+    let telegram = crate::telegram::Telegram::load();
+    if telegram.is_some() {
+        log::info!("admin login Telegram alerts enabled");
+    } else {
+        log::info!("admin login Telegram alerts off (no bot_listener TOKEN/chat)");
+    }
 
     let state = AppState {
         config,
@@ -87,6 +94,7 @@ async fn serve(
         secure_cookies,
         live: Arc::new(crate::live::LiveCache::new()),
         slow: crate::state::SlowInfo::new(),
+        telegram,
     };
 
     spawn_cleanup(state.clone());
