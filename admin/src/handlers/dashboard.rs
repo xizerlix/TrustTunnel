@@ -78,6 +78,7 @@ pub struct DashboardDataTemplate {
 pub struct UserRow {
     pub username: String,
     pub active: bool,
+    pub removed: bool,
     pub sessions: u64,
     pub ips: Vec<IpView>,
     pub inbound_h: String,
@@ -136,6 +137,10 @@ pub fn humanize_duration(d: Duration) -> String {
     } else {
         format!("{secs}s")
     }
+}
+
+fn keep_dashboard_user(in_credentials: bool, active: bool, total_bytes: u64) -> bool {
+    in_credentials || active || total_bytes > 0
 }
 
 pub struct ServiceStatus {
@@ -640,6 +645,7 @@ async fn collect(state: &AppState) -> Stats {
         .ok()
         .and_then(|s| toml::from_str::<CredentialsToml>(&s).ok())
         .unwrap_or_default();
+    let configured: BTreeSet<String> = creds.clients.iter().map(|c| c.username.clone()).collect();
 
     let mut all_user_names: Vec<String> = Vec::new();
     for c in &creds.clients {
@@ -677,12 +683,16 @@ async fn collect(state: &AppState) -> Stats {
             outbound_bytes = outbound_bytes.max(c.outbound);
         }
         let total_bytes = inbound_bytes.saturating_add(outbound_bytes);
+        let removed = !configured.contains(&username);
+        if !keep_dashboard_user(!removed, active, total_bytes) {
+            continue;
+        }
 
         let mut quota_limit = 0u64;
         if let Some(c) = creds.clients.iter().find(|c| c.username == username) {
             quota_limit = c.max_traffic_bytes;
         }
-        if quota_limit == 0 {
+        if quota_limit == 0 && !removed {
             quota_limit = default_limit;
         }
         if let Some(c) = live {
@@ -706,6 +716,7 @@ async fn collect(state: &AppState) -> Stats {
         users.push(UserRow {
             username,
             active,
+            removed,
             sessions,
             ips,
             inbound_h: humanize(inbound_bytes),
@@ -717,13 +728,16 @@ async fn collect(state: &AppState) -> Stats {
         });
     }
     users.sort_by(|a, b| {
-        if a.active == b.active {
-            a.username.cmp(&b.username)
-        } else if a.active {
-            std::cmp::Ordering::Less
-        } else {
-            std::cmp::Ordering::Greater
+        fn rank(u: &UserRow) -> u8 {
+            if u.removed {
+                2
+            } else if u.active {
+                0
+            } else {
+                1
+            }
         }
+        rank(a).cmp(&rank(b)).then_with(|| a.username.cmp(&b.username))
     });
 
     if let Some(prom) = prom.as_deref() {
@@ -1142,6 +1156,14 @@ client_sessions{protocol_type="HTTP3"} 2
 client_sessions_per_user{username="alice",protocol_type="HTTP2"} 99
 "#;
         assert_eq!(parse_session_total_from_prometheus(text), 7);
+    }
+
+    #[test]
+    fn keep_dashboard_user_hides_empty_removed() {
+        assert!(keep_dashboard_user(true, false, 0));
+        assert!(keep_dashboard_user(false, true, 0));
+        assert!(keep_dashboard_user(false, false, 100));
+        assert!(!keep_dashboard_user(false, false, 0));
     }
 
     #[test]

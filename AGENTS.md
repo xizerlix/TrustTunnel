@@ -213,6 +213,9 @@ protocol/deep-link format, library API) when relevant.
    path (not a hardcoded `/etc/trusttunnel/admin.toml`) and update the
    in-memory hash; login MUST re-read that file. Unique client-IP caps are
    not in the protocol — only `max_http2_conns` / `max_http3_conns`.
+   The admin dashboard SHOULD keep rows for usernames that still have
+   `traffic_usage_file` (or live) counters after they were deleted from
+   `credentials.toml`, and MUST label those rows as removed.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

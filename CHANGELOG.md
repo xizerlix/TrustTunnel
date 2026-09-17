@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   quota (GiB), logs tab renamed to top.
 - [Fix] Admin password change writes the CLI `--admin-toml` file and
   the in-memory hash so the next login uses the new password.
+- [Fix] Dashboard keeps spent traffic for users deleted from
+  `credentials.toml` and marks those rows as removed.
 - [Feature] Admin console: mobile burger nav, live host CPU/RAM/disk
   on the dashboard poll, certificate nested in the server card, log
   text auto-refresh without a full page reload, translated VPN help,
