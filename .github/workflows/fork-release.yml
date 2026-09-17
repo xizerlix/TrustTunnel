@@ -14,6 +14,10 @@ on:
           - all
           - admin
         default: all
+  push:
+    tags:
+      - "custom-*"
+
   # Tag pushes do not build. Cut a release with:
   #   gh workflow run fork-release.yml -f tag=custom-x.y.z -f build=admin|all
 
