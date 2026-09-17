@@ -1,136 +1,136 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">{{ t.vpn_settings }}</h1>
+<h1 class="text-2xl sm:text-3xl font-semibold mb-6">{{ t.vpn_settings }}</h1>
 
 {% if let Some(s) = save_status %}
-  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+  <div class="bg-emerald-100 text-emerald-800 p-3 rounded mb-4">{{ s }}</div>
 {% endif %}
 {% if let Some(e) = error %}
-  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+  <div class="bg-rose-100 text-rose-800 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
 <form method="post" action="/vpn" class="space-y-6 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Network</legend>
+  <fieldset class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+    <legend class="text-lg font-semibold px-2">{{ t.vpn_sec_network }}</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block">
         <span class="block text-sm font-medium mb-1">listen_address</span>
         <input type="text" name="listen_address" value="{{ vpn.listen_address }}" required>
-        <p class="text-xs text-slate-400 mt-1">Where TrustTunnel accepts incoming connections. Default <code>0.0.0.0:443</code>.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_listen }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">ipv6_available</span>
         <input type="checkbox" name="ipv6_available" {% if vpn.ipv6_available %}checked{% endif %}>
-        <p class="text-xs text-slate-400 mt-1">Route IPv6 traffic from clients.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_ipv6 }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">allow_private_network_connections</span>
         <input type="checkbox" name="allow_private_network_connections" {% if vpn.allow_private_network_connections %}checked{% endif %}>
-        <p class="text-xs text-slate-400 mt-1">Allow clients to reach the endpoint's private/LAN network.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_private }}</p>
       </label>
     </div>
   </fieldset>
 
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Timeouts (seconds)</legend>
+  <fieldset class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+    <legend class="text-lg font-semibold px-2">{{ t.vpn_sec_timeouts }}</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block">
         <span class="block text-sm font-medium mb-1">tls_handshake_timeout_secs</span>
         <input type="number" min="1" name="tls_handshake_timeout_secs" value="{{ vpn.tls_handshake_timeout_secs }}">
-        <p class="text-xs text-slate-400 mt-1">Max time to wait for TLS handshake. Default 10.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_tls }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">client_listener_timeout_secs</span>
         <input type="number" min="60" name="client_listener_timeout_secs" value="{{ vpn.client_listener_timeout_secs }}">
-        <p class="text-xs text-slate-400 mt-1">Idle timeout for the HTTP/2 tunnel itself. Default 600 (10 min).</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_client_listener }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">connection_establishment_timeout_secs</span>
         <input type="number" min="1" name="connection_establishment_timeout_secs" value="{{ vpn.connection_establishment_timeout_secs }}">
-        <p class="text-xs text-slate-400 mt-1">Max time to wait for outbound TCP/UDP connection to the destination. Default 30.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_conn_est }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">tcp_connections_timeout_secs</span>
         <input type="number" min="60" name="tcp_connections_timeout_secs" value="{{ vpn.tcp_connections_timeout_secs }}">
-        <p class="text-xs text-slate-400 mt-1">Idle timeout for tunneled TCP. After this, both sides go silent → pipe closed. Default 7200 (2 h).</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_tcp }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">udp_connections_timeout_secs</span>
         <input type="number" min="60" name="udp_connections_timeout_secs" value="{{ vpn.udp_connections_timeout_secs }}">
-        <p class="text-xs text-slate-400 mt-1">Idle timeout for tunneled UDP "connections". Default 300 (5 min).</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_udp }}</p>
       </label>
     </div>
   </fieldset>
 
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Handshake limits (anti-DoS)</legend>
+  <fieldset class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+    <legend class="text-lg font-semibold px-2">{{ t.vpn_sec_handshake }}</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block">
         <span class="block text-sm font-medium mb-1">limit_inbound_handshakes</span>
         <input type="checkbox" name="limit_inbound_handshakes" {% if vpn.limit_inbound_handshakes %}checked{% endif %}>
-        <p class="text-xs text-slate-400 mt-1">Cap new TCP accepts (128/s per IP, 512/s global) and concurrent TLS sessions. Set <strong>false</strong> if you have several clients behind one NAT IP and reconnects stall.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_limit }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">max_concurrent_inbound_handshakes</span>
         <input type="number" min="1" name="max_concurrent_inbound_handshakes" value="{{ vpn.max_concurrent_inbound_handshakes }}">
-        <p class="text-xs text-slate-400 mt-1">Used only when limits are enabled. Slot is held for the life of the TCP connection. Default 32.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_max_hs }}</p>
       </label>
     </div>
   </fieldset>
 
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Authentication &amp; users</legend>
+  <fieldset class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+    <legend class="text-lg font-semibold px-2">{{ t.vpn_sec_auth }}</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block">
         <span class="block text-sm font-medium mb-1">credentials_file</span>
         <input type="text" name="credentials_file" value="{{ vpn.credentials_file.as_deref().unwrap_or("") }}">
-        <p class="text-xs text-slate-400 mt-1">Path to the credentials file. Edit users on the <a href="/users" class="underline">Users</a> page.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_creds }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">auth_failure_status_code</span>
         <input type="number" name="auth_failure_status_code" value="{{ vpn.auth_failure_status_code }}">
-        <p class="text-xs text-slate-400 mt-1">HTTP code returned on auth failure (407, 405, 404, 403). Use 407 for browser auto-prompt.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_auth_code }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">default_max_http2_conns_per_client</span>
         <input type="number" name="default_max_http2_conns_per_client" value="{{ vpn.default_max_http2_conns_per_client }}">
-        <p class="text-xs text-slate-400 mt-1">Per-user HTTP/1+HTTP/2 session cap. Clients open 8 HTTP/2 by default; use 8 × devices. 0 = unlimited.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_h2 }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">default_max_http3_conns_per_client</span>
         <input type="number" name="default_max_http3_conns_per_client" value="{{ vpn.default_max_http3_conns_per_client }}">
-        <p class="text-xs text-slate-400 mt-1">Per-user HTTP/3 cap. 0 = unlimited.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_h3 }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">default_max_traffic_bytes_per_client</span>
         <input type="number" name="default_max_traffic_bytes_per_client" value="{{ vpn.default_max_traffic_bytes_per_client }}">
-        <p class="text-xs text-slate-400 mt-1">Per-user traffic quota (in+out bytes). 0 = unlimited. Requires <code>traffic_usage_file</code>.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_quota_default }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">traffic_usage_file</span>
         <input type="text" name="traffic_usage_file" value="{{ vpn.traffic_usage_file.as_deref().unwrap_or("") }}">
-        <p class="text-xs text-slate-400 mt-1">Path to persist per-user usage counters. Required if any quota is set.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_usage }}</p>
       </label>
     </div>
   </fieldset>
 
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Service endpoints</legend>
+  <fieldset class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+    <legend class="text-lg font-semibold px-2">{{ t.vpn_sec_endpoints }}</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <label class="block">
         <span class="block text-sm font-medium mb-1">rules_file</span>
         <input type="text" name="rules_file" value="{{ vpn.rules_file.as_deref().unwrap_or("") }}">
-        <p class="text-xs text-slate-400 mt-1">Optional connection filtering rules. Manage on the <a href="/rules" class="underline">Rules</a> page.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_rules }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">ping_enable</span>
         <input type="checkbox" name="ping_enable" {% if vpn.ping_enable %}checked{% endif %}>
-        <p class="text-xs text-slate-400 mt-1">Enable ping endpoint on main hosts.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_ping }}</p>
       </label>
       <label class="block">
         <span class="block text-sm font-medium mb-1">speedtest_enable</span>
         <input type="checkbox" name="speedtest_enable" {% if vpn.speedtest_enable %}checked{% endif %}>
-        <p class="text-xs text-slate-400 mt-1">Enable speedtest endpoint on main hosts.</p>
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_speedtest }}</p>
       </label>
     </div>
   </fieldset>

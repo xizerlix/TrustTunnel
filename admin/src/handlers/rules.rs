@@ -95,11 +95,9 @@ pub async fn rules_save(
     }
     let serialized = toml::to_string_pretty(&new_rules).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.rules_toml, &serialized)?;
+    let t = i18n::t(i18n::from_headers(&headers));
     let apply_result = apply(&state.paths, ApplyKind::FullRestart);
-    let msg = match &apply_result {
-        Ok(m) => m.clone(),
-        Err(e) => format!("save OK but apply failed: {e}"),
-    };
+    let msg = crate::apply::format_apply(&t, &apply_result);
     let err = if apply_result.is_err() {
         Some(msg.clone())
     } else {

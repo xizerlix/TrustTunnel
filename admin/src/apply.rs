@@ -85,20 +85,25 @@ pub fn kill_hup(process_name: &str) -> AdminResult<()> {
     Ok(())
 }
 
-pub fn apply(paths: &TrustTunnelPaths, kind: ApplyKind) -> AdminResult<String> {
+pub fn apply(paths: &TrustTunnelPaths, kind: ApplyKind) -> AdminResult<ApplyKind> {
     match kind {
         ApplyKind::Hosts => {
             kill_hup("trusttunnel_endpoint")?;
-            Ok("SIGHUP sent; TrustTunnel reloaded hosts.toml without restart".into())
+            Ok(ApplyKind::Hosts)
         }
         ApplyKind::FullRestart => {
             systemctl_restart(&paths.service_name)?;
             wait_active(&paths.service_name, Duration::from_secs(15))?;
-            Ok(format!(
-                "systemctl restart {} completed; service is active",
-                paths.service_name
-            ))
+            Ok(ApplyKind::FullRestart)
         }
+    }
+}
+
+pub fn format_apply(t: &crate::i18n::I18n, result: &AdminResult<ApplyKind>) -> String {
+    match result {
+        Ok(ApplyKind::Hosts) => t.apply_reloaded.to_string(),
+        Ok(ApplyKind::FullRestart) => t.apply_restarted.to_string(),
+        Err(e) => format!("{}: {e}", t.apply_saved_apply_failed),
     }
 }
 
@@ -325,6 +330,10 @@ pub fn systemctl_show(service: &str) -> AdminResult<String> {
             "InactiveEnterTimestampUSec",
             "-p",
             "ExecMainStartTimestampUSec",
+            "-p",
+            "ActiveEnterTimestamp",
+            "-p",
+            "InactiveEnterTimestamp",
             "--no-pager",
         ])
         .output()?;

@@ -32,7 +32,7 @@
       position: fixed;
       inset: 0;
       background: rgba(15, 23, 42, 0.45);
-      z-index: 50;
+      z-index: 60;
       align-items: center;
       justify-content: center;
     }
@@ -46,23 +46,35 @@
       animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #nav-drawer { transform: translateX(-100%); }
+    #nav-drawer.open { transform: translateX(0); }
+    @media (min-width: 768px) {
+      #nav-drawer { transform: none; }
+    }
   </style>
 </head>
-<body class="text-slate-900 min-h-screen flex">
-  <aside class="w-56 shrink-0 bg-slate-100 p-4 flex flex-col gap-2 border-r border-slate-200 overflow-visible">
+<body class="text-slate-900 min-h-screen md:flex">
+  <header class="md:hidden sticky top-0 z-40 flex items-center gap-3 bg-slate-100/95 backdrop-blur border-b border-slate-200 px-3 py-2">
+    <button type="button" id="nav-toggle" class="p-2 rounded hover:bg-slate-200" aria-label="{{ t.menu }}">
+      <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <span class="font-semibold">TrustTunnel</span>
+  </header>
+  <div id="nav-backdrop" class="hidden md:hidden fixed inset-0 bg-slate-900/40 z-40"></div>
+  <aside id="nav-drawer" class="fixed md:static inset-y-0 left-0 z-50 w-64 shrink-0 bg-slate-100 p-4 flex flex-col gap-2 border-r border-slate-200 overflow-y-auto transition-transform duration-200">
     <h1 class="text-lg font-semibold mb-4 flex items-center gap-2 overflow-visible leading-none">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6 shrink-0 text-indigo-500" aria-hidden="true">
         <path d="M12 2.5 5 5.6v5.6c0 4.7 3.1 8.8 7 10.3 3.9-1.5 7-5.6 7-10.3V5.6L12 2.5z"/>
       </svg>
       <span class="leading-tight">TrustTunnel Admin</span>
     </h1>
-    <a href="/dashboard" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_dashboard }}</a>
-    <a href="/vpn" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_vpn }}</a>
-    <a href="/hosts" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_hosts }}</a>
-    <a href="/users" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_users }}</a>
-    <a href="/rules" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_rules }}</a>
-    <a href="/logs" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_logs }}</a>
-    <a href="/settings" class="px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_settings }}</a>
+    <a href="/dashboard" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_dashboard }}</a>
+    <a href="/vpn" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_vpn }}</a>
+    <a href="/hosts" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_hosts }}</a>
+    <a href="/users" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_users }}</a>
+    <a href="/rules" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_rules }}</a>
+    <a href="/logs" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_logs }}</a>
+    <a href="/settings" class="js-nav px-3 py-2 rounded hover:bg-slate-200">{{ t.nav_settings }}</a>
     <div class="mt-auto pt-4 border-t border-slate-200 space-y-3">
       <div class="text-sm flex gap-2 px-3">
         <a href="/lang?set=en" class="underline {% if lang == "en" %}font-semibold{% endif %}">EN</a>
@@ -75,16 +87,16 @@
       </form>
     </div>
   </aside>
-  <main class="flex-1 p-8 min-w-0">
+  <main class="flex-1 p-4 sm:p-6 md:p-8 min-w-0">
     {% block body %}{% endblock %}
   </main>
   <div id="save-overlay">
-    <div class="bg-white rounded-lg shadow-lg p-6 flex flex-col items-center gap-3">
+    <div class="bg-white rounded-lg shadow-lg p-6 flex flex-col items-center gap-3 mx-4">
       <div class="spinner"></div>
-      <div class="text-sm text-slate-600">{{ t.saving }}</div>
+      <div class="text-sm text-slate-600 text-center">{{ t.saving }}</div>
     </div>
   </div>
-  <div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-800 text-white text-sm px-4 py-2 rounded shadow-lg z-50"></div>
+  <div id="toast" class="hidden fixed bottom-6 right-6 left-6 sm:left-auto bg-slate-800 text-white text-sm px-4 py-2 rounded shadow-lg z-50"></div>
   <script>
     document.addEventListener('submit', function (e) {
       var f = e.target;
@@ -98,6 +110,26 @@
       el.classList.remove('hidden');
       setTimeout(function () { el.classList.add('hidden'); }, 2500);
     };
+    (function () {
+      var drawer = document.getElementById('nav-drawer');
+      var backdrop = document.getElementById('nav-backdrop');
+      var toggle = document.getElementById('nav-toggle');
+      function openNav() {
+        drawer.classList.add('open');
+        backdrop.classList.remove('hidden');
+      }
+      function closeNav() {
+        drawer.classList.remove('open');
+        backdrop.classList.add('hidden');
+      }
+      if (toggle) toggle.addEventListener('click', function () {
+        if (drawer.classList.contains('open')) closeNav(); else openNav();
+      });
+      if (backdrop) backdrop.addEventListener('click', closeNav);
+      document.querySelectorAll('.js-nav').forEach(function (a) {
+        a.addEventListener('click', closeNav);
+      });
+    })();
   </script>
 </body>
 </html>

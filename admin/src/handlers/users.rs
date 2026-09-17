@@ -136,11 +136,9 @@ pub async fn users_save(
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.credentials_toml, &serialized)?;
+    let t = i18n::t(i18n::from_headers(&headers));
     let apply_result = apply(&state.paths, ApplyKind::FullRestart);
-    let msg = match &apply_result {
-        Ok(m) => m.clone(),
-        Err(e) => format!("save OK but apply failed: {e}"),
-    };
+    let msg = crate::apply::format_apply(&t, &apply_result);
     let err = if apply_result.is_err() {
         Some(msg.clone())
     } else {
@@ -159,9 +157,17 @@ pub async fn users_delete(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
     headers: HeaderMap,
-    Path(username): Path<String>,
+    body: String,
 ) -> AdminResult<Response> {
-    crate::auth::verify_csrf(&headers, &session).await?;
+    verify_csrf_from_form(&headers, &body, &session).await?;
+    let map = form_lists(&body);
+    let username = form_col(&map, "username")
+        .into_iter()
+        .find(|s| !s.is_empty())
+        .unwrap_or_default();
+    if username.is_empty() {
+        return Err(AdminError::Validation("username required".into()));
+    }
     let mut creds = load_or_default(&state.paths.credentials_toml)?;
     let before = creds.clients.len();
     creds.clients.retain(|c| c.username != username);
@@ -170,7 +176,16 @@ pub async fn users_delete(
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.credentials_toml, &serialized)?;
-    apply(&state.paths, ApplyKind::FullRestart)?;
+    let t = i18n::t(i18n::from_headers(&headers));
+    let apply_result = apply(&state.paths, ApplyKind::FullRestart);
+    if apply_result.is_err() {
+        let msg = crate::apply::format_apply(&t, &apply_result);
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            page(&session, &headers, &creds, Some(msg.clone()), Some(msg)),
+        )
+            .into_response());
+    }
     Ok(Redirect::to("/users").into_response())
 }
 

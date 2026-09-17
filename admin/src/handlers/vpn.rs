@@ -61,20 +61,16 @@ pub async fn vpn_save(
 
     let serialized = vpn.to_string_pretty()?;
     crate::apply::atomic_write(&state.paths.vpn_toml, &serialized)?;
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     let result = apply(&state.paths, ApplyKind::FullRestart);
-
-    let status = match &result {
-        Ok(msg) => msg.clone(),
-        Err(e) => format!("save OK but apply failed: {e}"),
-    };
+    let status = crate::apply::format_apply(&t, &result);
     let error = if result.is_err() {
         Some(status.clone())
     } else {
         None
     };
 
-    let lang = i18n::from_headers(&headers);
-    let t = i18n::t(lang);
     Ok(VpnTemplate {
         title: t.vpn_settings.into(),
         username: session.username,

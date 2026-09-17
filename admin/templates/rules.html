@@ -12,7 +12,8 @@
 {% endif %}
 
 <form method="post" action="/rules" class="space-y-4 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
-  <table class="w-full bg-white rounded shadow text-sm">
+  <div class="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-100">
+  <table class="w-full text-sm min-w-[28rem]">
     <thead>
       <tr class="text-left border-b border-slate-200">
         <th class="p-2">{{ t.cidr }}</th>
@@ -49,6 +50,7 @@
       </tr>
     </tbody>
   </table>
+  </div>
 
   <div class="flex justify-end">
     <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">

@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   SNI textarea, save spinner, system journal + htop tabs, and form
   parsing that allows adding a second user or rule without
   `duplicate field`. Login is rate-limited per IP and globally.
+- [Feature] Admin console: mobile burger nav, live host CPU/RAM/disk
+  on the dashboard poll, certificate nested in the server card, log
+  text auto-refresh without a full page reload, translated VPN help,
+  and user delete via a normal form POST.
 - [Feature] Traffic quotas on top of v1.1.0: `max_traffic_bytes` per client in
   `credentials.toml`, optional `default_max_traffic_bytes_per_client` and
   `traffic_usage_file` in `vpn.toml`. Clients over quota are blocked from new

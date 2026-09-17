@@ -1,21 +1,22 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">{{ t.logs }}</h1>
+<h1 class="text-2xl sm:text-3xl font-semibold mb-6">{{ t.logs }}</h1>
 
-<div class="flex gap-2 mb-4">
+<div class="flex flex-wrap gap-2 mb-4">
   <a href="/logs" class="px-3 py-2 rounded {% if tab == "logs" %}bg-indigo-600 text-white{% else %}bg-white border border-slate-300{% endif %}">{{ t.tab_service }}</a>
   <a href="/logs/htop" class="px-3 py-2 rounded {% if tab == "htop" %}bg-indigo-600 text-white{% else %}bg-white border border-slate-300{% endif %}">{{ t.tab_htop }}</a>
 </div>
 
 {% if tab == "logs" %}
-<form method="get" action="/logs" class="mb-4 flex flex-wrap gap-4 items-end">
+<p class="text-sm text-slate-500 mb-3">{{ t.logs_help }}</p>
+<form id="logs-form" method="get" action="/logs" class="mb-4 flex flex-wrap gap-4 items-end">
   <label class="block">
     <span class="block text-sm font-medium mb-1">{{ t.lines }}</span>
     <input type="number" min="50" max="5000" name="lines" value="{{ lines }}">
   </label>
   <label class="block">
     <span class="block text-sm font-medium mb-1">{{ t.auto_refresh }}</span>
-    <select name="refresh">
+    <select name="refresh" id="logs-refresh">
       <option value="off" {% if refresh == "off" %}selected{% endif %}>off</option>
       <option value="3" {% if refresh == "3" %}selected{% endif %}>3s</option>
       <option value="10" {% if refresh == "10" %}selected{% endif %}>10s</option>
@@ -26,7 +27,7 @@
     <input type="checkbox" name="system" value="on" {% if system %}checked{% endif %}>
     <span class="text-sm">{{ t.system_logs }}</span>
   </label>
-  <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">{{ t.refresh }}</button>
+  <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">{{ t.reload_logs }}</button>
 </form>
 {% endif %}
 
@@ -34,11 +35,50 @@
   <div class="bg-rose-100 text-rose-800 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
-{% if refresh != "off" %}
+<pre id="log-text" class="bg-white text-slate-800 border border-slate-200 p-4 rounded text-xs overflow-auto font-mono whitespace-pre-wrap break-all min-h-[70vh] w-full max-w-full">{{ content }}</pre>
 <script>
-  setTimeout(function () { location.reload(); }, {{ refresh }}000);
+(function () {
+  var pre = document.getElementById('log-text');
+  var form = document.getElementById('logs-form');
+  var tab = "{{ tab }}";
+  var timer = null;
+  function qs() {
+    if (!form) return '';
+    var lines = form.elements.namedItem('lines');
+    var system = form.elements.namedItem('system');
+    var q = 'lines=' + encodeURIComponent(lines ? lines.value : '200');
+    if (system && system.checked) q += '&system=on';
+    return q;
+  }
+  function load() {
+    var url = tab === 'htop' ? '/logs/htop/data' : '/logs/data?' + qs();
+    fetch(url, { credentials: 'same-origin', redirect: 'manual' })
+      .then(function (r) {
+        if (r.status === 401 || r.type === 'opaqueredirect') {
+          window.location.href = '/login';
+          return null;
+        }
+        if (!r.ok) return null;
+        return r.text();
+      })
+      .then(function (t) { if (t != null) pre.textContent = t; })
+      .catch(function () {});
+  }
+  function intervalMs() {
+    var sel = document.getElementById('logs-refresh');
+    var v = sel ? sel.value : "{{ refresh }}";
+    if (tab === 'htop') v = "{{ refresh }}";
+    if (!v || v === 'off') return 0;
+    return parseInt(v, 10) * 1000;
+  }
+  function arm() {
+    if (timer) clearInterval(timer);
+    var ms = intervalMs();
+    if (ms > 0) timer = setInterval(load, ms);
+  }
+  var sel = document.getElementById('logs-refresh');
+  if (sel) sel.addEventListener('change', arm);
+  arm();
+})();
 </script>
-{% endif %}
-
-<pre class="bg-white text-slate-800 border border-slate-200 p-4 rounded text-xs overflow-auto font-mono whitespace-pre-wrap break-all min-h-[70vh] w-full max-w-full">{{ content }}</pre>
 {% endblock %}

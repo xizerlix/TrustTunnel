@@ -5,7 +5,8 @@ use crate::live::htop_snapshot;
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::{Query, State};
-use axum::http::HeaderMap;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
@@ -41,6 +42,39 @@ fn refresh_val(s: Option<&str>) -> String {
     }
 }
 
+fn system_on(s: Option<&str>) -> bool {
+    matches!(s, Some("on" | "1" | "true"))
+}
+
+fn read_journal(state: &AppState, lines: usize, system: bool) -> (String, Option<String>) {
+    let unit = if system {
+        None
+    } else {
+        Some(state.paths.service_name.as_str())
+    };
+    match journalctl_logs(unit, lines) {
+        Ok(mut content) => {
+            if !content.is_empty() {
+                let mut reversed: Vec<&str> = content.lines().collect();
+                reversed.reverse();
+                content = reversed.join("\n");
+                content.push('\n');
+            }
+            (content, None)
+        }
+        Err(e) => (String::new(), Some(e.to_string())),
+    }
+}
+
+fn plain_text(body: String) -> Response {
+    let mut resp = body.into_response();
+    resp.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    resp
+}
+
 pub async fn logs_view(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
@@ -51,23 +85,8 @@ pub async fn logs_view(
     let t = i18n::t(lang);
     let lines = q.lines.unwrap_or(200).clamp(50, 5000);
     let refresh = refresh_val(q.refresh.as_deref());
-    let system = matches!(q.system.as_deref(), Some("on" | "1" | "true"));
-    let unit = if system {
-        None
-    } else {
-        Some(state.paths.service_name.as_str())
-    };
-    let result = journalctl_logs(unit, lines);
-    let (mut content, error) = match result {
-        Ok(s) => (s, None),
-        Err(e) => (String::new(), Some(e.to_string())),
-    };
-    if !content.is_empty() {
-        let mut reversed: Vec<&str> = content.lines().collect();
-        reversed.reverse();
-        content = reversed.join("\n");
-        content.push('\n');
-    }
+    let system = system_on(q.system.as_deref());
+    let (content, error) = read_journal(&state, lines, system);
     LogsTemplate {
         title: t.logs.into(),
         username: session.username,
@@ -82,6 +101,20 @@ pub async fn logs_view(
         tab: "logs",
     }
     .into_response()
+}
+
+pub async fn logs_data(
+    State(state): State<AppState>,
+    Authenticated(_session): Authenticated,
+    Query(q): Query<LogsQuery>,
+) -> Response {
+    let lines = q.lines.unwrap_or(200).clamp(50, 5000);
+    let system = system_on(q.system.as_deref());
+    let (content, error) = read_journal(&state, lines, system);
+    if let Some(e) = error {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    plain_text(content)
 }
 
 pub async fn htop_view(
@@ -107,4 +140,11 @@ pub async fn htop_view(
         tab: "htop",
     }
     .into_response()
+}
+
+pub async fn htop_data(Authenticated(_session): Authenticated) -> Response {
+    let content = tokio::task::spawn_blocking(htop_snapshot)
+        .await
+        .unwrap_or_else(|_| "htop unavailable".into());
+    plain_text(content)
 }

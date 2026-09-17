@@ -41,7 +41,7 @@ impl SlowInfo {
 
     pub fn host_and_cert(&self, cert_path: Option<&str>) -> (HostSnapshot, Option<(String, String)>) {
         let mut g = self.inner.lock().unwrap();
-        if g.host_at.elapsed() > Duration::from_secs(30) {
+        if g.host_at.elapsed() > Duration::from_secs(5) {
             g.host = crate::live::parse_host_snapshot();
             g.host_at = Instant::now();
         }

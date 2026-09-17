@@ -135,10 +135,7 @@ fn build_router(state: AppState) -> Router {
             "/users",
             get(handlers::users::users_form).post(handlers::users::users_save),
         )
-        .route(
-            "/users/:username/delete",
-            post(handlers::users::users_delete),
-        )
+        .route("/users/delete", post(handlers::users::users_delete))
         .route(
             "/users/:username/deeplink",
             post(handlers::users::users_deeplink),
@@ -148,7 +145,9 @@ fn build_router(state: AppState) -> Router {
             get(handlers::rules::rules_form).post(handlers::rules::rules_save),
         )
         .route("/logs", get(handlers::logs::logs_view))
+        .route("/logs/data", get(handlers::logs::logs_data))
         .route("/logs/htop", get(handlers::logs::htop_view))
+        .route("/logs/htop/data", get(handlers::logs::htop_data))
         .route(
             "/settings",
             get(handlers::settings::settings_form).post(handlers::settings::settings_password),

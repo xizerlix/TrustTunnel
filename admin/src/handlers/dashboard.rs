@@ -55,6 +55,13 @@ pub struct DashboardDataTemplate {
     pub traffic_outbound_h: String,
     pub traffic_total_h: String,
     pub users: Vec<UserRow>,
+    pub host_version: String,
+    pub host_load: String,
+    pub host_ram: String,
+    pub host_disk: String,
+    pub host_uptime: String,
+    pub cert_subject: String,
+    pub cert_expiry: String,
 }
 
 #[derive(Clone)]
@@ -132,18 +139,26 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
     let mut active_enter_us: u64 = 0;
     let mut inactive_enter_us: u64 = 0;
     let mut exec_main_us: u64 = 0;
+    let mut active_enter_pretty = String::new();
+    let mut inactive_enter_pretty = String::new();
     for line in show.lines() {
         if let Some((k, v)) = line.split_once('=') {
             match k.trim() {
                 "ActiveState" => active_state = v.trim().to_string(),
                 "ActiveEnterTimestampUSec" => {
-                    active_enter_us = v.trim().parse().unwrap_or(0);
+                    active_enter_us = parse_usec(v);
                 }
                 "InactiveEnterTimestampUSec" => {
-                    inactive_enter_us = v.trim().parse().unwrap_or(0);
+                    inactive_enter_us = parse_usec(v);
                 }
                 "ExecMainStartTimestampUSec" => {
-                    exec_main_us = v.trim().parse().unwrap_or(0);
+                    exec_main_us = parse_usec(v);
+                }
+                "ActiveEnterTimestamp" => {
+                    active_enter_pretty = v.trim().to_string();
+                }
+                "InactiveEnterTimestamp" => {
+                    inactive_enter_pretty = v.trim().to_string();
                 }
                 _ => {}
             }
@@ -164,12 +179,65 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
     } else {
         inactive_enter_us
     };
-    let since_label = duration_since_usec(now, since_us).map(humanize_duration);
+    let mut since_label = duration_since_usec(now, since_us).map(humanize_duration);
+    if since_label.is_none() {
+        let pretty = if active {
+            active_enter_pretty.as_str()
+        } else {
+            inactive_enter_pretty.as_str()
+        };
+        since_label = parse_systemd_pretty(pretty)
+            .and_then(|then| now.duration_since(then).ok())
+            .map(humanize_duration);
+    }
     ServiceStatus {
         active,
         label,
         since_label,
     }
+}
+
+fn parse_usec(v: &str) -> u64 {
+    v.trim()
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|s| !s.is_empty())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+pub fn parse_systemd_pretty(s: &str) -> Option<SystemTime> {
+    let s = s.trim();
+    if s.is_empty() || s == "0" || s.eq_ignore_ascii_case("n/a") {
+        return None;
+    }
+    let tokens: Vec<&str> = s.split_whitespace().collect();
+    let (date, time_raw) = if tokens.len() >= 3 && tokens[0].bytes().any(|b| b.is_ascii_alphabetic())
+    {
+        (tokens[1], tokens[2])
+    } else if tokens.len() >= 2 {
+        (tokens[0], tokens[1])
+    } else {
+        return None;
+    };
+    let time = time_raw.split('.').next().unwrap_or(time_raw);
+    let date_time = format!("{date} {time}");
+    let naive = chrono::NaiveDateTime::parse_from_str(&date_time, "%Y-%m-%d %H:%M:%S").ok()?;
+    let tz = tokens.last().copied().unwrap_or("");
+    let secs = if tz.eq_ignore_ascii_case("utc")
+        || tz.eq_ignore_ascii_case("gmt")
+        || tz.eq_ignore_ascii_case("z")
+    {
+        chrono::TimeZone::from_utc_datetime(&chrono::Utc, &naive).timestamp()
+    } else {
+        chrono::TimeZone::from_local_datetime(&chrono::Local, &naive)
+            .single()
+            .unwrap_or_else(|| naive.and_utc().with_timezone(&chrono::Local))
+            .timestamp()
+    };
+    if secs < 0 {
+        return None;
+    }
+    UNIX_EPOCH.checked_add(Duration::from_secs(secs as u64))
 }
 
 fn duration_since_usec(now: SystemTime, usec: u64) -> Option<Duration> {
@@ -467,6 +535,13 @@ struct Stats {
     traffic_outbound_h: String,
     traffic_total_h: String,
     users: Vec<UserRow>,
+    host_version: String,
+    host_load: String,
+    host_ram: String,
+    host_disk: String,
+    host_uptime: String,
+    cert_subject: String,
+    cert_expiry: String,
 }
 
 async fn collect(state: &AppState) -> Stats {
@@ -651,6 +726,13 @@ async fn collect(state: &AppState) -> Stats {
     let total_out = total_out.max(live_out);
     let total_combined = total_in.saturating_add(total_out);
 
+    let cert_path = std::fs::read_to_string(&state.paths.hosts_toml)
+        .ok()
+        .and_then(|s| toml::from_str::<HostsToml>(&s).ok())
+        .and_then(|h| h.main_hosts.first().map(|x| x.cert_chain_path.clone()));
+    let (host, cert) = state.slow.host_and_cert(cert_path.as_deref());
+    let (cert_subject, cert_expiry) = cert.unwrap_or_else(|| (String::new(), String::new()));
+
     Stats {
         service_active: svc.active,
         service_label: svc.label,
@@ -662,6 +744,13 @@ async fn collect(state: &AppState) -> Stats {
         traffic_outbound_h: humanize(total_out),
         traffic_total_h: humanize(total_combined),
         users,
+        host_version: host.version,
+        host_load: host.load,
+        host_ram: host.ram,
+        host_disk: host.disk,
+        host_uptime: host.uptime,
+        cert_subject,
+        cert_expiry,
     }
 }
 
@@ -678,6 +767,13 @@ fn fill_data(stats: Stats, t: I18n) -> DashboardDataTemplate {
         traffic_outbound_h: stats.traffic_outbound_h,
         traffic_total_h: stats.traffic_total_h,
         users: stats.users,
+        host_version: stats.host_version,
+        host_load: stats.host_load,
+        host_ram: stats.host_ram,
+        host_disk: stats.host_disk,
+        host_uptime: stats.host_uptime,
+        cert_subject: stats.cert_subject,
+        cert_expiry: stats.cert_expiry,
     }
 }
 
@@ -690,12 +786,6 @@ pub async fn dashboard(
     let t = i18n::t(lang);
     let stats = collect(&state).await;
     let data = fill_data(stats, t.clone());
-    let cert_path = std::fs::read_to_string(&state.paths.hosts_toml)
-        .ok()
-        .and_then(|s| toml::from_str::<HostsToml>(&s).ok())
-        .and_then(|h| h.main_hosts.first().map(|x| x.cert_chain_path.clone()));
-    let (host, cert) = state.slow.host_and_cert(cert_path.as_deref());
-    let (cert_subject, cert_expiry) = cert.unwrap_or_else(|| (String::new(), String::new()));
     DashboardTemplate {
         title: t.dashboard.into(),
         username: session.username,
@@ -712,13 +802,13 @@ pub async fn dashboard(
         traffic_outbound_h: data.traffic_outbound_h,
         traffic_total_h: data.traffic_total_h,
         users: data.users,
-        host_version: host.version,
-        host_load: host.load,
-        host_ram: host.ram,
-        host_disk: host.disk,
-        host_uptime: host.uptime,
-        cert_subject,
-        cert_expiry,
+        host_version: data.host_version,
+        host_load: data.host_load,
+        host_ram: data.host_ram,
+        host_disk: data.host_disk,
+        host_uptime: data.host_uptime,
+        cert_subject: data.cert_subject,
+        cert_expiry: data.cert_expiry,
     }
     .into_response()
 }
@@ -811,6 +901,15 @@ client_sessions_per_user{username="bob",protocol_type="HTTP2"} 4
         assert!(!st.active);
         assert_eq!(st.label, "failed");
         assert!(st.since_label.is_some());
+    }
+
+    #[test]
+    fn systemd_pretty_timestamp_fills_uptime_when_usec_missing() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let show = "ActiveState=active\nActiveEnterTimestampUSec=0\nActiveEnterTimestamp=Thu 1970-01-12 12:06:40 UTC\n";
+        let st = parse_systemctl_show(show, now);
+        assert!(st.active);
+        assert_eq!(st.since_label.as_deref(), Some("1h 40m"));
     }
 
     #[test]

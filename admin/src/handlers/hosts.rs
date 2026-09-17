@@ -73,11 +73,9 @@ pub async fn hosts_save(
     hosts.main_hosts = form.into_main_hosts();
     let serialized = toml::to_string_pretty(&hosts).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.hosts_toml, &serialized)?;
+    let t = i18n::t(i18n::from_headers(&headers));
     let apply_result = apply(&state.paths, ApplyKind::Hosts);
-    let status = match &apply_result {
-        Ok(msg) => msg.clone(),
-        Err(e) => format!("save OK but apply failed: {e}"),
-    };
+    let status = crate::apply::format_apply(&t, &apply_result);
     let error = if apply_result.is_err() {
         Some(status.clone())
     } else {
