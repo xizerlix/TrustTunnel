@@ -689,7 +689,7 @@ pub async fn dashboard(
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
     let stats = collect(&state).await;
-    let data = fill_data(stats, t);
+    let data = fill_data(stats, t.clone());
     let cert_path = std::fs::read_to_string(&state.paths.hosts_toml)
         .ok()
         .and_then(|s| toml::from_str::<HostsToml>(&s).ok())

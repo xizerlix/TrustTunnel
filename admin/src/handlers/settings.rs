@@ -76,13 +76,14 @@ pub async fn settings_password(
     cfg.save(&state.paths.admin_toml)?;
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
+    let status = Some(t.password_updated.to_string());
     Ok(SettingsTemplate {
         title: t.settings.into(),
         username: session.username,
         csrf: session.csrf,
         t,
         lang: lang.as_str(),
-        status: Some(t.password_updated.into()),
+        status,
         error: None,
     }
     .into_response()

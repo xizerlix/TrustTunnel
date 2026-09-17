@@ -171,8 +171,16 @@ pub fn is_private_ip(s: &str) -> bool {
     };
     match ip {
         IpAddr::V4(v) => v.is_private() || v.is_loopback() || v.is_link_local(),
-        IpAddr::V6(v) => v.is_loopback() || v.is_unique_local() || v.is_unicast_link_local(),
+        IpAddr::V6(v) => ipv6_is_local(v),
     }
+}
+
+fn ipv6_is_local(v: std::net::Ipv6Addr) -> bool {
+    if v.is_loopback() {
+        return true;
+    }
+    let o = v.octets();
+    (o[0] & 0xfe) == 0xfc || (o[0] == 0xfe && (o[1] & 0xc0) == 0x80)
 }
 
 fn disk_geo(ip: &str) -> Option<IpKind> {
@@ -416,7 +424,10 @@ mod tests {
         assert!(is_private_ip("10.0.0.1"));
         assert!(is_private_ip("192.168.1.1"));
         assert!(is_private_ip("127.0.0.1"));
+        assert!(is_private_ip("fc00::1"));
+        assert!(is_private_ip("fe80::1"));
         assert!(!is_private_ip("8.8.8.8"));
+        assert!(!is_private_ip("2001:4860:4860::8888"));
     }
 
     #[test]
