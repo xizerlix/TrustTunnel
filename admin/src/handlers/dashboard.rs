@@ -50,6 +50,8 @@ pub struct UserRow {
     pub active: bool,
     pub sessions: u64,
     pub ips_label: String,
+    pub inbound_h: String,
+    pub outbound_h: String,
     pub total_h: String,
     pub quota_limit_h: String,
     pub quota_used_pct: u8,
@@ -118,7 +120,7 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
     let mut inactive_enter_us: u64 = 0;
     for line in show.lines() {
         if let Some((k, v)) = line.split_once('=') {
-            match k {
+            match k.trim() {
                 "ActiveState" => active_state = v.trim().to_string(),
                 "ActiveEnterTimestampUSec" => {
                     active_enter_us = v.trim().parse().unwrap_or(0);
@@ -226,8 +228,28 @@ fn json_u64(v: Option<&Value>) -> u64 {
     };
     v.as_u64()
         .or_else(|| v.as_i64().and_then(|n| u64::try_from(n).ok()))
-        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        .or_else(|| {
+            v.as_f64()
+                .and_then(|n| (n.is_finite() && n >= 0.0).then_some(n as u64))
+        })
+        .or_else(|| v.as_str().and_then(parse_metric_u64))
         .unwrap_or(0)
+}
+
+fn parse_metric_u64(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(n) = s.parse::<u64>() {
+        return Some(n);
+    }
+    let n: f64 = s.parse().ok()?;
+    if n.is_finite() && n >= 0.0 {
+        Some(n as u64)
+    } else {
+        None
+    }
 }
 
 pub fn parse_user_traffic_from_prometheus(text: &str) -> HashMap<String, (u64, u64)> {
@@ -250,12 +272,14 @@ pub fn parse_user_traffic_from_prometheus(text: &str) -> HashMap<String, (u64, u
         let Some(rest) = line.get(brace + 1..) else {
             continue;
         };
-        let value: u64 = rest.trim().parse().unwrap_or(0);
+        let value = parse_metric_u64(rest).unwrap_or(0);
         let mut username = None;
         for part in labels.split(',') {
             let part = part.trim();
             if let Some(v) = part.strip_prefix("username=\"") {
                 username = Some(v.trim_end_matches('"').to_string());
+            } else if let Some(v) = part.strip_prefix("username=") {
+                username = Some(v.trim_matches('"').to_string());
             }
         }
         if let Some(u) = username.filter(|s| !s.is_empty()) {
@@ -285,13 +309,23 @@ pub fn parse_session_total_from_prometheus(text: &str) -> u64 {
     let mut total = 0u64;
     for line in text.lines() {
         let line = line.trim();
-        if line.starts_with('#') || !line.starts_with("client_sessions{") {
+        if line.starts_with('#') {
+            continue;
+        }
+        let metric = line
+            .split('{')
+            .next()
+            .unwrap_or(line)
+            .split(' ')
+            .next()
+            .unwrap_or("");
+        if metric != "client_sessions" {
             continue;
         }
         let Some(value) = line.rsplit(' ').next() else {
             continue;
         };
-        total = total.saturating_add(value.parse().unwrap_or(0));
+        total = total.saturating_add(parse_metric_u64(value).unwrap_or(0));
     }
     total
 }
@@ -310,7 +344,7 @@ pub fn parse_sessions_from_prometheus(text: &str) -> HashMap<String, u64> {
         let Some(rest) = line.get(brace + 1..) else {
             continue;
         };
-        let value: u64 = rest.trim().parse().unwrap_or(0);
+        let value = parse_metric_u64(rest).unwrap_or(0);
         let mut username = None;
         for part in labels.split(',') {
             let part = part.trim();
@@ -519,10 +553,13 @@ async fn collect(state: &AppState) -> Stats {
                 .map(|c| !c.ips.is_empty())
                 .unwrap_or(false);
         let u_usage = usage.get(&username).cloned().unwrap_or_default();
-        let mut total_bytes = u_usage.inbound.saturating_add(u_usage.outbound);
+        let mut inbound_bytes = u_usage.inbound;
+        let mut outbound_bytes = u_usage.outbound;
         if let Some(c) = live {
-            total_bytes = total_bytes.max(c.inbound.saturating_add(c.outbound));
+            inbound_bytes = inbound_bytes.max(c.inbound);
+            outbound_bytes = outbound_bytes.max(c.outbound);
         }
+        let total_bytes = inbound_bytes.saturating_add(outbound_bytes);
 
         let mut quota_limit = 0u64;
         if let Some(c) = creds.clients.iter().find(|c| c.username == username) {
@@ -554,6 +591,8 @@ async fn collect(state: &AppState) -> Stats {
             active,
             sessions,
             ips_label,
+            inbound_h: humanize(inbound_bytes),
+            outbound_h: humanize(outbound_bytes),
             total_h: humanize(total_bytes),
             quota_limit_h,
             quota_used_pct,
@@ -570,10 +609,8 @@ async fn collect(state: &AppState) -> Stats {
         }
     });
 
-    if session_total == 0 {
-        if let Ok(prom) = read_prometheus_metrics(&state.paths.metrics_address) {
-            session_total = parse_session_total_from_prometheus(&prom);
-        }
+    if let Some(prom) = prom.as_deref() {
+        session_total = session_total.max(parse_session_total_from_prometheus(prom));
     }
 
     let clients_count = users.iter().filter(|u| u.active).count();
@@ -824,5 +861,32 @@ client_sessions{protocol_type="HTTP3"} 2
 client_sessions_per_user{username="alice",protocol_type="HTTP2"} 99
 "#;
         assert_eq!(parse_session_total_from_prometheus(text), 7);
+    }
+
+    #[test]
+    fn prometheus_float_values_are_parsed() {
+        let text = r#"
+client_sessions{protocol_type="HTTP2"} 3.0
+client_sessions_per_user{username="alice",protocol_type="HTTP2"} 2.0
+inbound_traffic_bytes_per_user{username="alice"} 1024.0
+"#;
+        assert_eq!(parse_session_total_from_prometheus(text), 3);
+        assert_eq!(parse_sessions_from_prometheus(text).get("alice"), Some(&2));
+        assert_eq!(parse_user_traffic_from_prometheus(text).get("alice"), Some(&(1024, 0)));
+    }
+
+    #[test]
+    fn json_sessions_accept_floats() {
+        let v = json!([{
+            "username": "alice",
+            "sessions": 2.0,
+            "inbound": 10.0,
+            "outbound": 5.0,
+            "ips": [{"address": "1.2.3.4"}]
+        }]);
+        let parsed = parse_live_clients(&v);
+        assert_eq!(parsed[0].sessions, 2);
+        assert_eq!(parsed[0].inbound, 10);
+        assert_eq!(parsed[0].outbound, 5);
     }
 }

@@ -2,10 +2,29 @@
 {% block body %}
 <h1 class="text-3xl font-semibold mb-6">Dashboard</h1>
 
-<div id="dashboard-data"
-     hx-get="/dashboard/data"
-     hx-trigger="every 5s"
-     hx-swap="innerHTML">
+<div id="dashboard-data">
 {% include "dashboard_data.html" %}
 </div>
+<script>
+(function () {
+  var root = document.getElementById('dashboard-data');
+  if (!root) return;
+  function tick() {
+    fetch('/dashboard/data', { credentials: 'same-origin', redirect: 'manual' })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 302 || r.status === 303 || r.type === 'opaqueredirect') {
+          window.location.href = '/login';
+          return null;
+        }
+        if (!r.ok) return null;
+        return r.text();
+      })
+      .then(function (html) {
+        if (html) root.innerHTML = html;
+      })
+      .catch(function () {});
+  }
+  setInterval(tick, 5000);
+})();
+</script>
 {% endblock %}

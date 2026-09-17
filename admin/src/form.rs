@@ -33,6 +33,18 @@ where
             Ok(out)
         }
 
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(vec![v.to_string()])
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(vec![v.to_string()])
+        }
+
+        fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+            Ok(vec![v.to_string()])
+        }
+
         fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
             Ok(Vec::new())
         }

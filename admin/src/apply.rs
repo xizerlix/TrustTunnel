@@ -128,22 +128,107 @@ pub fn metrics_http_get(metrics_address: &str, path: &str) -> AdminResult<(u16, 
     use std::net::TcpStream;
     use std::time::Duration;
     let connect_to = connect_metrics_address(metrics_address);
-    let mut stream = TcpStream::connect(&connect_to)?;
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    let mut stream = match connect_to.parse::<SocketAddr>() {
+        Ok(addr) => TcpStream::connect_timeout(&addr, Duration::from_secs(2))?,
+        Err(_) => TcpStream::connect(&connect_to)?,
+    };
+    stream.set_read_timeout(Some(Duration::from_millis(1500)))?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-    let req = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    // HTTP/1.0: the metrics codec does not close keep-alive HTTP/1.1 sockets
+    // (Connection: close is ignored unless the method is CONNECT).
+    let req = format!("GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n");
     stream.write_all(req.as_bytes())?;
+    stream.flush()?;
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf)?;
+    let mut tmp = [0u8; 8192];
+    loop {
+        match stream.read(&mut tmp) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                if http_message_complete(&buf) {
+                    break;
+                }
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
+                break;
+            }
+            Err(e) => return Err(e.into()),
+        }
+        if buf.len() > 2 * 1024 * 1024 {
+            break;
+        }
+    }
     parse_http_response(&buf)
 }
 
+fn header_block_end(buf: &[u8]) -> Option<usize> {
+    buf.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4)
+}
+
+fn content_length_of(headers: &str) -> Option<usize> {
+    for line in headers.lines() {
+        let line = line.trim();
+        let (name, value) = line.split_once(':')?;
+        if name.eq_ignore_ascii_case("content-length") {
+            return value.trim().parse().ok();
+        }
+    }
+    None
+}
+
+fn chunked_body_complete(body: &[u8]) -> bool {
+    let mut rest = body;
+    loop {
+        let Some(pos) = rest.windows(2).position(|w| w == b"\r\n") else {
+            return false;
+        };
+        let Ok(size_line) = std::str::from_utf8(&rest[..pos]) else {
+            return false;
+        };
+        let Some(hex) = size_line.split(';').next() else {
+            return false;
+        };
+        let Ok(size) = usize::from_str_radix(hex.trim(), 16) else {
+            return false;
+        };
+        let Some(after) = rest.get(pos + 2..) else {
+            return false;
+        };
+        if size == 0 {
+            return true;
+        }
+        if after.len() < size + 2 {
+            return false;
+        }
+        rest = match after.get(size..) {
+            Some(r) => r.strip_prefix(b"\r\n").unwrap_or(r),
+            None => return false,
+        };
+    }
+}
+
+pub fn http_message_complete(buf: &[u8]) -> bool {
+    let Some(header_end) = header_block_end(buf) else {
+        return false;
+    };
+    let headers = std::str::from_utf8(&buf[..header_end]).unwrap_or("");
+    let body = &buf[header_end..];
+    let lower = headers.to_ascii_lowercase();
+    if lower.contains("transfer-encoding: chunked") {
+        return chunked_body_complete(body);
+    }
+    if let Some(len) = content_length_of(headers) {
+        return body.len() >= len;
+    }
+    false
+}
+
 pub fn parse_http_response(buf: &[u8]) -> AdminResult<(u16, String)> {
-    let header_end = buf
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .map(|p| p + 4)
-        .ok_or_else(|| AdminError::Apply("no http body".into()))?;
+    let header_end = header_block_end(buf).ok_or_else(|| AdminError::Apply("no http body".into()))?;
     let headers = std::str::from_utf8(&buf[..header_end]).unwrap_or("");
     let status = headers
         .lines()
@@ -151,7 +236,13 @@ pub fn parse_http_response(buf: &[u8]) -> AdminResult<(u16, String)> {
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let mut body = String::from_utf8_lossy(&buf[header_end..]).into_owned();
+    let raw_body = &buf[header_end..];
+    let body_bytes = if let Some(len) = content_length_of(headers) {
+        raw_body.get(..len).unwrap_or(raw_body)
+    } else {
+        raw_body
+    };
+    let mut body = String::from_utf8_lossy(body_bytes).into_owned();
     if headers
         .to_ascii_lowercase()
         .contains("transfer-encoding: chunked")
@@ -272,5 +363,20 @@ mod apply_http_tests {
         assert_eq!(connect_metrics_address("0.0.0.0:1987"), "127.0.0.1:1987");
         assert_eq!(connect_metrics_address("[::]:1987"), "[::1]:1987");
         assert_eq!(connect_metrics_address("127.0.0.1:1987"), "127.0.0.1:1987");
+    }
+
+    #[test]
+    fn keep_alive_content_length_is_complete_without_close() {
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n[{\"ok\":true}]";
+        assert!(http_message_complete(raw));
+        let (status, body) = parse_http_response(raw).unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, "[{\"ok\":true}]");
+    }
+
+    #[test]
+    fn incomplete_content_length_is_not_complete() {
+        let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n[{\"ok\":true}]";
+        assert!(!http_message_complete(raw));
     }
 }

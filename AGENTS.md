@@ -201,6 +201,10 @@ protocol/deep-link format, library API) when relevant.
    In `trusttunnel_admin`, any HTML form field deserialized as `Vec<_>` MUST
    accept both a single string and a repeated sequence (`form::one_or_many`):
    `application/x-www-form-urlencoded` sends one row as a string, not an array.
+   Admin GETs to the endpoint metrics listener (`/clients`, `/metrics`) MUST
+   finish once `Content-Length` or a complete chunked body is present. The
+   metrics HTTP/1 codec does not close keep-alive GET sockets, so
+   `read_to_end` times out and the dashboard shows zero sessions.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

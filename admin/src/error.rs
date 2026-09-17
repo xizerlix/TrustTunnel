@@ -84,16 +84,29 @@ fn html_page(title: &str, body: &str) -> String {
     )
 }
 
+fn login_redirect_html() -> String {
+    html_page(
+        "Sign in required",
+        "Your session is missing or expired. Continue to the sign-in page.",
+    )
+}
+
 impl IntoResponse for AdminError {
     fn into_response(self) -> Response {
         match self {
             AdminError::Auth(_) => Redirect::to("/login").into_response(),
             AdminError::AuthHtmx => {
-                let mut resp = StatusCode::UNAUTHORIZED.into_response();
+                let mut resp = (
+                    StatusCode::UNAUTHORIZED,
+                    Html(login_redirect_html()),
+                )
+                    .into_response();
                 resp.headers_mut().insert(
                     header::HeaderName::from_static("hx-redirect"),
                     HeaderValue::from_static("/login"),
                 );
+                resp.headers_mut()
+                    .insert(header::LOCATION, HeaderValue::from_static("/login"));
                 resp
             }
             other => {
@@ -146,6 +159,13 @@ mod tests {
                 .get(header::HeaderName::from_static("hx-redirect"))
                 .unwrap(),
             "/login"
+        );
+        assert_ne!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or(""),
+            "application/json"
         );
     }
 

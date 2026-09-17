@@ -50,7 +50,10 @@
       </td>
       <td class="p-2">{{ c.sessions }}</td>
       <td class="p-2 text-xs text-slate-500">{{ c.ips_label }}</td>
-      <td class="p-2">{{ c.total_h }}</td>
+      <td class="p-2">
+        <div>{{ c.total_h }}</div>
+        <div class="text-xs text-slate-400">↓ {{ c.inbound_h }} · ↑ {{ c.outbound_h }}</div>
+      </td>
       <td class="p-2">
         <div class="flex items-center gap-2">
           <span class="text-xs">{{ c.quota_limit_h }}</span>
