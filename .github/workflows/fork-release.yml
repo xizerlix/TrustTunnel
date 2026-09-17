@@ -24,6 +24,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fork-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build-linux-x86_64:
     name: Linux x86_64
@@ -99,13 +103,22 @@ jobs:
           echo "PACKAGE=${NAME}.tar.gz" >> "$GITHUB_ENV"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: TrustTunnel ${{ github.event.inputs.tag || github.ref_name }}
-          body: |
-            Linux x86_64 fork of TrustTunnel v1.1.0: `/clients` (ips[], quotas),
-            traffic_usage_file persistence, accept-rate / handshake limits,
-            and the optional `trusttunnel_admin` web console.
-          files: ${{ env.PACKAGE }}
-          generate_release_notes: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -eux
+          NOTES='Linux x86_64 fork of TrustTunnel v1.1.0: /clients (ips[], quotas), traffic_usage_file persistence, accept-rate / handshake limits, and the optional trusttunnel_admin web console.'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "TrustTunnel ${TAG}" --notes "$NOTES"
+          else
+            gh release create "$TAG" --title "TrustTunnel ${TAG}" --notes "$NOTES"
+          fi
+          for i in 1 2 3 4 5; do
+            if gh release upload "$TAG" "$PACKAGE" --clobber; then
+              exit 0
+            fi
+            echo "upload failed, retry ${i}/5"
+            sleep $((i * 4))
+          done
+          exit 1
