@@ -21,6 +21,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- [Fix] Admin Save accepts a single form field as well as a repeated
+  sequence, so TLS host (and other table) saves no longer fail with
+  `expected a sequence`.
+- [Fix] Unauthenticated admin pages redirect to login instead of JSON.
+  The dashboard refreshes every 5s, colors service status with uptime or
+  downtime, counts live users/sessions from `/clients` `ips[]` objects
+  (and Prometheus fallbacks), and shows spent traffic from
+  `traffic_usage_file` even when no quota is set.
 - [Fix] Drop default `tcp_connections_timeout_secs` from one week to two hours
   so dead NAT sockets cannot occupy a client's `connection_limiter` slots for
   days and starve fresh VPN requests.

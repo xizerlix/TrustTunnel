@@ -30,7 +30,7 @@
           <input type="text" name="username" value="{{ c.username }}">
           {% if !c.username.is_empty() %}
           <button type="button"
-                  hx-delete="/users/{{ c.username }}/delete"
+                  hx-post="/users/{{ c.username }}/delete"
                   hx-confirm="Delete user {{ c.username }}?"
                   hx-headers='{"x-csrf-token": "{{ csrf }}"}'
                   class="ml-2 px-2 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-700">delete</button>

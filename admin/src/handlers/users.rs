@@ -44,18 +44,29 @@ pub async fn users_save(
 ) -> AdminResult<Response> {
     verify_csrf_from_form(&headers, &body, &session).await?;
     let mut creds = load_or_default(&state.paths.credentials_toml)?;
+    let existing_clients = creds.clients.clone();
     let form: UsersForm = serde_urlencoded::from_str(&body)
         .map_err(|e| AdminError::Validation(format!("invalid form: {e}")))?;
 
     creds.clients.clear();
     for (i, name) in form.username.iter().enumerate() {
-        if name.is_empty() { continue; }
-        let password = form.password.get(i).cloned().unwrap_or_default();
-        if password.is_empty() {
-            return Err(AdminError::Validation(format!(
-                "password is required for user {name}"
-            )));
+        if name.is_empty() {
+            continue;
         }
+        let password = form.password.get(i).cloned().unwrap_or_default();
+        let existing = existing_clients.iter().find(|c| c.username == *name);
+        let password = if password.is_empty() {
+            match existing {
+                Some(c) => c.password.clone(),
+                None => {
+                    return Err(AdminError::Validation(format!(
+                        "password is required for user {name}"
+                    )));
+                }
+            }
+        } else {
+            password
+        };
         creds.clients.push(ClientEntry {
             username: name.clone(),
             password,
@@ -119,17 +130,31 @@ fn load_or_default(path: &std::path::Path) -> AdminResult<CredentialsToml> {
 
 #[derive(Deserialize, Default)]
 pub struct UsersForm {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub username: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub password: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub max_http2_conns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub max_http3_conns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub max_traffic_bytes: Vec<String>,
 }
 
 fn parse_u32(s: String) -> u32 { s.parse().unwrap_or(0) }
 fn parse_u64(s: String) -> u64 { s.parse().unwrap_or(0) }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_user_form_deserializes() {
+        let form: UsersForm =
+            serde_urlencoded::from_str("username=alice&password=secret&max_http2_conns=8&max_http3_conns=0&max_traffic_bytes=0")
+                .unwrap();
+        assert_eq!(form.username, vec!["alice"]);
+        assert_eq!(form.password, vec!["secret"]);
+    }
+}

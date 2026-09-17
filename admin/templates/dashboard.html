@@ -2,7 +2,10 @@
 {% block body %}
 <h1 class="text-3xl font-semibold mb-6">Dashboard</h1>
 
-<div id="dashboard-data" hx-get="/dashboard/data" hx-trigger="every 5s" hx-swap="innerHTML">
+<div id="dashboard-data"
+     hx-get="/dashboard/data"
+     hx-trigger="every 5s"
+     hx-swap="innerHTML">
 {% include "dashboard_data.html" %}
 </div>
 {% endblock %}

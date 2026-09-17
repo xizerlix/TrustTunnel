@@ -1,6 +1,6 @@
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::config::{hash_password, AdminConfig};
-use crate::error::{AdminError, AdminResult};
+use crate::error::{AdminError, AdminResult, WithStatusExt};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
@@ -57,7 +57,7 @@ pub async fn settings_password(
     .await
     .unwrap_or(false);
     if !ok {
-        return Err(AdminError::Auth("current password incorrect".into()));
+        return Err(AdminError::Validation("current password incorrect".into()));
     }
     let new_hash = tokio::task::spawn_blocking(move || hash_password(&form.new_password))
         .await
@@ -76,8 +76,6 @@ pub async fn settings_password(
     .into_response()
         .with_status(StatusCode::OK))
 }
-
-use crate::error::WithStatusExt;
 
 #[derive(Deserialize)]
 pub struct PasswordForm {

@@ -77,13 +77,13 @@ pub async fn hosts_save(
 
 #[derive(Deserialize, Default)]
 pub struct HostsForm {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub main_hostname: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub main_cert: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub main_key: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub main_allowed_sni: Vec<String>,
 }
 
@@ -95,7 +95,7 @@ impl HostsForm {
         let snis = self.main_allowed_sni;
         let len = hostnames.len().max(certs.len()).max(keys.len());
         (0..len)
-            .map(|idx| {
+            .filter_map(|idx| {
                 let hostname = hostnames.get(idx).cloned().unwrap_or_default();
                 if hostname.is_empty() {
                     return None;
@@ -118,7 +118,34 @@ impl HostsForm {
                     allowed_sni,
                 })
             })
-            .flatten()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_hostname_saves_as_one_host() {
+        let form: HostsForm = serde_urlencoded::from_str(
+            "main_hostname=watafa.duckdns.org&main_cert=/certs/fullchain.pem&main_key=/certs/privkey.pem&main_allowed_sni=watafa.duckdns.org",
+        )
+        .unwrap();
+        let hosts = form.into_main_hosts();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].hostname, "watafa.duckdns.org");
+        assert_eq!(hosts[0].allowed_sni, vec!["watafa.duckdns.org"]);
+    }
+
+    #[test]
+    fn two_hostnames_stay_two_rows() {
+        let form: HostsForm = serde_urlencoded::from_str(
+            "main_hostname=a.example&main_cert=/a.pem&main_key=/a.key&main_allowed_sni=a.example&main_hostname=b.example&main_cert=/b.pem&main_key=/b.key&main_allowed_sni=b.example",
+        )
+        .unwrap();
+        let hosts = form.into_main_hosts();
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[1].hostname, "b.example");
     }
 }

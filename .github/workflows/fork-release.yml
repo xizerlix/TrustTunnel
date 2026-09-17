@@ -7,9 +7,15 @@ on:
         description: "Release tag, e.g. custom-1.0.0"
         required: true
         default: custom-1.0.0
-  push:
-    tags:
-      - "custom-*"
+      build:
+        description: "Binaries to compile"
+        type: choice
+        options:
+          - all
+          - admin
+        default: all
+  # Tag pushes do not build. Cut a release with:
+  #   gh workflow run fork-release.yml -f tag=custom-x.y.z -f build=admin|all
 
 permissions:
   contents: write
@@ -22,7 +28,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve build target
+        id: target
+        run: |
+          TARGET="${{ github.event.inputs.build }}"
+          if [ -z "$TARGET" ]; then TARGET="all"; fi
+          echo "build=$TARGET" >> "$GITHUB_OUTPUT"
+
       - name: Install build dependencies
+        if: steps.target.outputs.build == 'all'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -40,20 +54,39 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binaries
+      - name: Build all release binaries
+        if: steps.target.outputs.build == 'all'
         env:
           TRUSTTUNNEL_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: cargo +1.95 build --bins --release
 
+      - name: Build admin only
+        if: steps.target.outputs.build == 'admin'
+        env:
+          TRUSTTUNNEL_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
+        run: cargo +1.95 build -p trusttunnel_admin --release --bin trusttunnel_admin
+
       - name: Package
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          BUILD: ${{ steps.target.outputs.build }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eux
           ARCH="linux-x86_64"
           NAME="trusttunnel-${TAG}-${ARCH}"
           mkdir -p "dist/${NAME}"
-          cp target/release/trusttunnel_endpoint "dist/${NAME}/"
+          if [ -f target/release/trusttunnel_endpoint ]; then
+            cp target/release/trusttunnel_endpoint "dist/${NAME}/"
+          elif [ "$BUILD" = "admin" ]; then
+            gh release download "$TAG" --pattern "${NAME}.tar.gz" --dir /tmp || true
+            if [ -f "/tmp/${NAME}.tar.gz" ]; then
+              tar -xzf "/tmp/${NAME}.tar.gz" -C /tmp
+              if [ -f "/tmp/${NAME}/trusttunnel_endpoint" ]; then
+                cp "/tmp/${NAME}/trusttunnel_endpoint" "dist/${NAME}/"
+              fi
+            fi
+          fi
           if [ -f target/release/trusttunnel_admin ]; then
             cp target/release/trusttunnel_admin "dist/${NAME}/"
           fi

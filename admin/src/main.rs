@@ -2,6 +2,7 @@ mod apply;
 mod auth;
 mod config;
 mod error;
+mod form;
 mod handlers;
 mod models;
 mod paths;

@@ -102,11 +102,6 @@
         <p class="text-xs text-slate-400 mt-1">Per-user HTTP/3 cap. 0 = unlimited.</p>
       </label>
       <label class="block">
-        <span class="block text-sm font-medium mb-1">default_max_http3_conns_per_client</span>
-        <input type="number" name="default_max_http3_conns_per_client" value="{{ vpn.default_max_http3_conns_per_client }}">
-        <p class="text-xs text-slate-400 mt-1">Per-user HTTP/3 cap. 0 = unlimited.</p>
-      </label>
-      <label class="block">
         <span class="block text-sm font-medium mb-1">default_max_traffic_bytes_per_client</span>
         <input type="number" name="default_max_traffic_bytes_per_client" value="{{ vpn.default_max_traffic_bytes_per_client }}">
         <p class="text-xs text-slate-400 mt-1">Per-user traffic quota (in+out bytes). 0 = unlimited. Requires <code>traffic_usage_file</code>.</p>

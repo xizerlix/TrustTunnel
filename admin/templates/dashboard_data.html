@@ -1,10 +1,13 @@
-{% block content %}
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
     <div class="text-sm text-slate-500">Service</div>
-    <div class="text-2xl font-semibold mt-1">{{ service_active }}</div>
-    {% if let Some(u) = uptime %}
-      <div class="text-xs text-slate-400 mt-1">since {{ u }}</div>
+    {% if service_active %}
+      <div class="text-2xl font-semibold mt-1 text-emerald-600 dark:text-emerald-400">{{ service_label }}</div>
+    {% else %}
+      <div class="text-2xl font-semibold mt-1 text-rose-600 dark:text-rose-400">{{ service_label }}</div>
+    {% endif %}
+    {% if let Some(u) = since_label %}
+      <div class="text-xs text-slate-400 mt-1">{{ u }}</div>
     {% endif %}
   </div>
   <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
@@ -16,7 +19,7 @@
     <div class="text-2xl font-semibold mt-1">{{ session_total }}</div>
   </div>
   <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
-    <div class="text-sm text-slate-500">Traffic total (cumulative)</div>
+    <div class="text-sm text-slate-500">Traffic this period</div>
     <div class="text-lg mt-1">↑ {{ traffic_outbound_h }}</div>
     <div class="text-lg">↓ {{ traffic_inbound_h }}</div>
     <div class="text-sm text-slate-400 mt-1">Σ {{ traffic_total_h }}</div>
@@ -34,8 +37,8 @@
       <th class="p-2">Username</th>
       <th class="p-2">Sessions</th>
       <th class="p-2">IPs</th>
-      <th class="p-2">Total (cumulative)</th>
-      <th class="p-2">Quota left / used</th>
+      <th class="p-2">Traffic used</th>
+      <th class="p-2">Quota</th>
     </tr>
   </thead>
   <tbody>
@@ -51,7 +54,7 @@
       <td class="p-2">
         <div class="flex items-center gap-2">
           <span class="text-xs">{{ c.quota_limit_h }}</span>
-          {% if c.quota_used_pct > 0 %}
+          {% if c.quota_limit_h != "∞" %}
           <div class="w-24 h-2 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
             <div class="h-full {% if c.quota_exceeded %}bg-rose-500{% else %}bg-indigo-500{% endif %}"
                  style="width: {{ c.quota_used_pct }}%"></div>
@@ -66,4 +69,3 @@
 </table>
 </div>
 {% endif %}
-{% endblock %}

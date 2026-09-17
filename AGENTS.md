@@ -21,8 +21,8 @@ traffic.
 - **Testing**: `cargo test` with built-in test harness; hyper and tempfile for
   integration tests; proptest for property-based tests in `deeplink`
 - **Target Platform**: Linux (production), macOS (development)
-- **Project Type**: Cargo workspace with 5 crates (`lib`, `endpoint`,
-  `deeplink`, `macros`, `tools`)
+- **Project Type**: Cargo workspace with 6 crates (`lib`, `endpoint`,
+  `admin`, `deeplink`, `macros`, `tools`)
 
 ## Project Structure
 
@@ -36,6 +36,9 @@ vpn-libs-endpoint/
 │       └── common/            # Shared test helpers and fixtures
 ├── endpoint/                  # Binary crate (`trusttunnel_endpoint`)
 │   └── src/main.rs            # CLI entrypoint for the VPN endpoint
+├── admin/                     # Binary crate (`trusttunnel_admin`) web console
+│   ├── src/                   # Auth, TOML editors, dashboard
+│   └── templates/             # Askama HTML templates
 ├── tools/                     # Binary crate (`setup_wizard`)
 │   └── setup_wizard/          # Interactive config generator with ACME support
 ├── deeplink/                  # Library crate (`trusttunnel-deeplink`)
@@ -151,14 +154,17 @@ protocol/deep-link format, library API) when relevant.
 
 ### I. Architecture
 
-1. The project is a Cargo workspace with five crates, each with a distinct
+1. The project is a Cargo workspace with six crates, each with a distinct
    responsibility:
     - **`lib`** (`trusttunnel`): core library containing protocol logic, HTTP
       codecs (HTTP/1.1, HTTP/2, HTTP/3), TLS demultiplexing, traffic
       forwarding (TCP, UDP, ICMP), settings parsing, authentication, and
       metrics. All shared types live here.
     - **`endpoint`** (`trusttunnel_endpoint`): binary crate with the CLI
-      entrypoint for running the VPN endpoint. Thin wrapper around `lib`.
+      entrypoint for the VPN endpoint. Thin wrapper around `lib`.
+    - **`admin`** (`trusttunnel_admin`): optional web console for editing
+      TOML configs, viewing live sessions/traffic, and restarting the
+      endpoint.
     - **`tools`** (`setup_wizard`): binary crate providing an interactive
       configuration wizard with ACME/Let's Encrypt support for certificate
       provisioning.
@@ -192,6 +198,9 @@ protocol/deep-link format, library API) when relevant.
    TLS handshake rate limits MUST be gated by `limit_inbound_handshakes`, with
    the concurrent cap in `max_concurrent_inbound_handshakes` (default 32), so
    operators behind shared NAT can turn them off or raise them without a rebuild.
+   In `trusttunnel_admin`, any HTML form field deserialized as `Vec<_>` MUST
+   accept both a single string and a repeated sequence (`form::one_or_many`):
+   `application/x-www-form-urlencoded` sends one row as a string, not an array.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

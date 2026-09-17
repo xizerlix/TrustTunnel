@@ -13,37 +13,18 @@ pub struct TrustTunnelPaths {
 }
 
 impl TrustTunnelPaths {
-    pub fn detect() -> anyhow::Result<Self> {
-        let candidates_root = [
-            "/opt/trusttunnel",
-            "/etc/trusttunnel",
-        ];
-        let root = candidates_root
-            .iter()
-            .map(Path::new)
-            .find(|p| p.join("vpn.toml").exists())
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("/opt/trusttunnel"));
-
+    pub fn from_root(root: PathBuf) -> Self {
         let vpn_toml = root.join("vpn.toml");
         let hosts_toml = root.join("hosts.toml");
         let credentials_toml = root.join("credentials.toml");
         let rules_toml = root.join("rules.toml");
-        let admin_dir = PathBuf::from("/etc/trusttunnel");
-        let admin_toml = admin_dir.join("admin.toml");
-
+        let admin_toml = PathBuf::from("/etc/trusttunnel/admin.toml");
         let metrics_address = std::fs::read_to_string(&vpn_toml)
             .ok()
-            .and_then(|s| {
-                let doc: toml_edit::DocumentMut = s.parse().ok()?;
-                doc.get("metrics")
-                    .and_then(|m| m.get("address"))
-                    .and_then(|a| a.as_str())
-                    .map(String::from)
-            })
+            .and_then(|s| parse_metrics_address(&s))
             .unwrap_or_else(|| "127.0.0.1:1987".into());
 
-        Ok(Self {
+        Self {
             root,
             vpn_toml,
             hosts_toml,
@@ -52,30 +33,71 @@ impl TrustTunnelPaths {
             admin_toml,
             service_name: "trusttunnel".into(),
             metrics_address,
-        })
+        }
+    }
+
+    pub fn detect() -> anyhow::Result<Self> {
+        let candidates_root = ["/opt/trusttunnel", "/etc/trusttunnel"];
+        let root = candidates_root
+            .iter()
+            .map(Path::new)
+            .find(|p| p.join("vpn.toml").exists())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("/opt/trusttunnel"));
+        Ok(Self::from_root(root))
     }
 
     pub fn exists(&self) -> bool {
         self.vpn_toml.exists() && self.hosts_toml.exists()
     }
 
-    pub fn detect_with_root(root: std::path::PathBuf) -> anyhow::Result<Self> {
+    pub fn detect_with_root(root: PathBuf) -> anyhow::Result<Self> {
         let candidates = [
             root.clone(),
-            std::path::PathBuf::from("/opt/trusttunnel"),
-            std::path::PathBuf::from("/etc/trusttunnel"),
+            PathBuf::from("/opt/trusttunnel"),
+            PathBuf::from("/etc/trusttunnel"),
         ];
         let chosen = candidates
             .iter()
             .find(|p| p.join("vpn.toml").exists())
             .cloned()
             .unwrap_or(root);
-        let mut paths = Self::detect()?;
-        paths.root = chosen.clone();
-        paths.vpn_toml = chosen.join("vpn.toml");
-        paths.hosts_toml = chosen.join("hosts.toml");
-        paths.credentials_toml = chosen.join("credentials.toml");
-        paths.rules_toml = chosen.join("rules.toml");
-        Ok(paths)
+        Ok(Self::from_root(chosen))
+    }
+}
+
+pub fn parse_metrics_address(vpn_toml: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = vpn_toml.parse().ok()?;
+    doc.get("metrics")
+        .and_then(|m| m.get("address"))
+        .and_then(|a| a.as_str())
+        .map(String::from)
+}
+
+pub fn parse_traffic_usage_file(vpn_toml: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = vpn_toml.parse().ok()?;
+    doc.get("traffic_usage_file")
+        .and_then(|a| a.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_metrics_address() {
+        let toml = "[metrics]\naddress = \"127.0.0.1:1987\"\n";
+        assert_eq!(parse_metrics_address(toml).as_deref(), Some("127.0.0.1:1987"));
+    }
+
+    #[test]
+    fn parses_traffic_usage_file() {
+        let toml = "listen_address = \"0.0.0.0:443\"\ntraffic_usage_file = \"traffic_usage.toml\"\n";
+        assert_eq!(
+            parse_traffic_usage_file(toml).as_deref(),
+            Some("traffic_usage.toml")
+        );
     }
 }

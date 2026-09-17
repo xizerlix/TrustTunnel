@@ -118,7 +118,10 @@ fn action_to_str(a: &RuleAction) -> String {
 
 #[derive(Deserialize)]
 pub struct RulesForm {
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub cidr: Vec<String>,
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub client_random_prefix: Vec<String>,
+    #[serde(default, deserialize_with = "crate::form::one_or_many")]
     pub action: Vec<String>,
 }
