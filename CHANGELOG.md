@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin console: EN/RU language toggle (cookie), live dashboard
+  with service up/down time, per-IP connection age and mobile/home icons,
+  host/certificate card (refreshed slowly), GiB quotas, deeplink copy,
+  SNI textarea, save spinner, system journal + htop tabs, and form
+  parsing that allows adding a second user or rule without
+  `duplicate field`. Login is rate-limited per IP and globally.
 - [Feature] Traffic quotas on top of v1.1.0: `max_traffic_bytes` per client in
   `credentials.toml`, optional `default_max_traffic_bytes_per_client` and
   `traffic_usage_file` in `vpn.toml`. Clients over quota are blocked from new

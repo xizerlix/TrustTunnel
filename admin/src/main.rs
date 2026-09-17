@@ -4,6 +4,8 @@ mod config;
 mod error;
 mod form;
 mod handlers;
+mod i18n;
+mod live;
 mod models;
 mod paths;
 mod state;
@@ -79,6 +81,8 @@ async fn serve(
         sessions: SessionStore::new(),
         login_limiter: LoginLimiter::new(),
         secure_cookies,
+        live: Arc::new(crate::live::LiveCache::new()),
+        slow: crate::state::SlowInfo::new(),
     };
 
     spawn_cleanup(state.clone());
@@ -87,7 +91,11 @@ async fn serve(
 
     log::info!("trusttunnel_admin listening on {}", state.config.bind);
     let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -112,6 +120,7 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/logout", post(handlers::login::logout))
         .route("/health-check", get(health_check))
+        .route("/lang", get(handlers::login::set_lang))
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/dashboard/data", get(handlers::dashboard::dashboard_data))
         .route(
@@ -127,14 +136,19 @@ fn build_router(state: AppState) -> Router {
             get(handlers::users::users_form).post(handlers::users::users_save),
         )
         .route(
-            "/users/{username}/delete",
+            "/users/:username/delete",
             post(handlers::users::users_delete),
+        )
+        .route(
+            "/users/:username/deeplink",
+            post(handlers::users::users_deeplink),
         )
         .route(
             "/rules",
             get(handlers::rules::rules_form).post(handlers::rules::rules_save),
         )
         .route("/logs", get(handlers::logs::logs_view))
+        .route("/logs/htop", get(handlers::logs::htop_view))
         .route(
             "/settings",
             get(handlers::settings::settings_form).post(handlers::settings::settings_password),

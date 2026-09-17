@@ -1,6 +1,7 @@
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::config::{hash_password, AdminConfig};
 use crate::error::{AdminError, AdminResult, WithStatusExt};
+use crate::i18n::{self, I18n};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
@@ -14,17 +15,24 @@ pub struct SettingsTemplate {
     pub title: String,
     pub username: String,
     pub csrf: String,
+    pub t: I18n,
+    pub lang: &'static str,
     pub status: Option<String>,
     pub error: Option<String>,
 }
 
 pub async fn settings_form(
     Authenticated(session): Authenticated,
+    headers: HeaderMap,
 ) -> Response {
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     SettingsTemplate {
-        title: "Settings".into(),
+        title: t.settings.into(),
         username: session.username,
         csrf: session.csrf,
+        t,
+        lang: lang.as_str(),
         status: None,
         error: None,
     }
@@ -66,11 +74,15 @@ pub async fn settings_password(
     let mut cfg: AdminConfig = (*state.config).clone();
     cfg.bcrypt_hash = new_hash;
     cfg.save(&state.paths.admin_toml)?;
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     Ok(SettingsTemplate {
-        title: "Settings".into(),
+        title: t.settings.into(),
         username: session.username,
         csrf: session.csrf,
-        status: Some("Password updated".into()),
+        t,
+        lang: lang.as_str(),
+        status: Some(t.password_updated.into()),
         error: None,
     }
     .into_response()

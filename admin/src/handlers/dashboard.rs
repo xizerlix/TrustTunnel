@@ -1,9 +1,12 @@
 use crate::apply::{read_clients_json, read_prometheus_metrics, systemctl_show};
 use crate::auth::Authenticated;
-use crate::models::{CredentialsToml, VpnToml};
+use crate::i18n::{self, I18n};
+use crate::live::IpView;
+use crate::models::{CredentialsToml, HostsToml, VpnToml};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::Value;
@@ -17,6 +20,8 @@ pub struct DashboardTemplate {
     pub title: String,
     pub username: String,
     pub csrf: String,
+    pub t: I18n,
+    pub lang: &'static str,
     pub service_active: bool,
     pub service_label: String,
     pub since_label: Option<String>,
@@ -27,11 +32,19 @@ pub struct DashboardTemplate {
     pub traffic_outbound_h: String,
     pub traffic_total_h: String,
     pub users: Vec<UserRow>,
+    pub host_version: String,
+    pub host_load: String,
+    pub host_ram: String,
+    pub host_disk: String,
+    pub host_uptime: String,
+    pub cert_subject: String,
+    pub cert_expiry: String,
 }
 
 #[derive(Template)]
 #[template(path = "dashboard_data.html")]
 pub struct DashboardDataTemplate {
+    pub t: I18n,
     pub service_active: bool,
     pub service_label: String,
     pub since_label: Option<String>,
@@ -49,7 +62,7 @@ pub struct UserRow {
     pub username: String,
     pub active: bool,
     pub sessions: u64,
-    pub ips_label: String,
+    pub ips: Vec<IpView>,
     pub inbound_h: String,
     pub outbound_h: String,
     pub total_h: String,
@@ -118,6 +131,7 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
     let mut active_state = String::new();
     let mut active_enter_us: u64 = 0;
     let mut inactive_enter_us: u64 = 0;
+    let mut exec_main_us: u64 = 0;
     for line in show.lines() {
         if let Some((k, v)) = line.split_once('=') {
             match k.trim() {
@@ -127,6 +141,9 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
                 }
                 "InactiveEnterTimestampUSec" => {
                     inactive_enter_us = v.trim().parse().unwrap_or(0);
+                }
+                "ExecMainStartTimestampUSec" => {
+                    exec_main_us = v.trim().parse().unwrap_or(0);
                 }
                 _ => {}
             }
@@ -138,11 +155,16 @@ pub fn parse_systemctl_show(show: &str, now: SystemTime) -> ServiceStatus {
     } else {
         active_state.clone()
     };
-    let since_label = if active {
-        duration_since_usec(now, active_enter_us).map(|d| format!("up {}", humanize_duration(d)))
+    let since_us = if active {
+        if active_enter_us > 0 {
+            active_enter_us
+        } else {
+            exec_main_us
+        }
     } else {
-        duration_since_usec(now, inactive_enter_us).map(|d| format!("down {}", humanize_duration(d)))
+        inactive_enter_us
     };
+    let since_label = duration_since_usec(now, since_us).map(humanize_duration);
     ServiceStatus {
         active,
         label,
@@ -508,6 +530,24 @@ async fn collect(state: &AppState) -> Stats {
         by_user.insert(c.username.clone(), c);
     }
 
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for (user, c) in &by_user {
+        if c.sessions > 0 || !c.ips.is_empty() {
+            for ip in &c.ips {
+                pairs.push((user.clone(), ip.clone()));
+            }
+        }
+    }
+    let live = state.live.clone();
+    let pairs_for_lookup = pairs.clone();
+    let views = tokio::task::spawn_blocking(move || live.sync_ips(&pairs_for_lookup))
+        .await
+        .unwrap_or_else(|_| Vec::new());
+    let mut by_user_ips: HashMap<String, Vec<IpView>> = HashMap::new();
+    for (pair, view) in pairs.into_iter().zip(views.into_iter()) {
+        by_user_ips.entry(pair.0).or_default().push(view);
+    }
+
     let creds = std::fs::read_to_string(&state.paths.credentials_toml)
         .ok()
         .and_then(|s| toml::from_str::<CredentialsToml>(&s).ok())
@@ -539,19 +579,8 @@ async fn collect(state: &AppState) -> Stats {
     for username in all_user_names {
         let live = by_user.get(&username);
         let sessions = live.map(|c| c.sessions).unwrap_or(0);
-        let ips_label = live
-            .map(|c| {
-                if c.ips.is_empty() {
-                    "—".into()
-                } else {
-                    c.ips.join(", ")
-                }
-            })
-            .unwrap_or_else(|| "—".into());
-        let active = sessions > 0
-            || live
-                .map(|c| !c.ips.is_empty())
-                .unwrap_or(false);
+        let ips = by_user_ips.get(&username).cloned().unwrap_or_default();
+        let active = sessions > 0 || !ips.is_empty();
         let u_usage = usage.get(&username).cloned().unwrap_or_default();
         let mut inbound_bytes = u_usage.inbound;
         let mut outbound_bytes = u_usage.outbound;
@@ -590,7 +619,7 @@ async fn collect(state: &AppState) -> Stats {
             username,
             active,
             sessions,
-            ips_label,
+            ips,
             inbound_h: humanize(inbound_bytes),
             outbound_h: humanize(outbound_bytes),
             total_h: humanize(total_bytes),
@@ -636,8 +665,9 @@ async fn collect(state: &AppState) -> Stats {
     }
 }
 
-fn fill_data(stats: Stats) -> DashboardDataTemplate {
+fn fill_data(stats: Stats, t: I18n) -> DashboardDataTemplate {
     DashboardDataTemplate {
+        t,
         service_active: stats.service_active,
         service_label: stats.service_label,
         since_label: stats.since_label,
@@ -654,13 +684,24 @@ fn fill_data(stats: Stats) -> DashboardDataTemplate {
 pub async fn dashboard(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
+    headers: HeaderMap,
 ) -> Response {
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     let stats = collect(&state).await;
-    let data = fill_data(stats);
+    let data = fill_data(stats, t);
+    let cert_path = std::fs::read_to_string(&state.paths.hosts_toml)
+        .ok()
+        .and_then(|s| toml::from_str::<HostsToml>(&s).ok())
+        .and_then(|h| h.main_hosts.first().map(|x| x.cert_chain_path.clone()));
+    let (host, cert) = state.slow.host_and_cert(cert_path.as_deref());
+    let (cert_subject, cert_expiry) = cert.unwrap_or_else(|| (String::new(), String::new()));
     DashboardTemplate {
-        title: "Dashboard".into(),
+        title: t.dashboard.into(),
         username: session.username,
         csrf: session.csrf,
+        t,
+        lang: lang.as_str(),
         service_active: data.service_active,
         service_label: data.service_label,
         since_label: data.since_label,
@@ -671,6 +712,13 @@ pub async fn dashboard(
         traffic_outbound_h: data.traffic_outbound_h,
         traffic_total_h: data.traffic_total_h,
         users: data.users,
+        host_version: host.version,
+        host_load: host.load,
+        host_ram: host.ram,
+        host_disk: host.disk,
+        host_uptime: host.uptime,
+        cert_subject,
+        cert_expiry,
     }
     .into_response()
 }
@@ -678,9 +726,11 @@ pub async fn dashboard(
 pub async fn dashboard_data(
     State(state): State<AppState>,
     Authenticated(_session): Authenticated,
+    headers: HeaderMap,
 ) -> Response {
+    let t = i18n::t(i18n::from_headers(&headers));
     let stats = collect(&state).await;
-    fill_data(stats).into_response()
+    fill_data(stats, t).into_response()
 }
 
 #[cfg(test)]
@@ -750,7 +800,7 @@ client_sessions_per_user{username="bob",protocol_type="HTTP2"} 4
         let st = parse_systemctl_show(show, now);
         assert!(st.active);
         assert_eq!(st.label, "active");
-        assert!(st.since_label.as_deref().unwrap().starts_with("up "));
+        assert!(st.since_label.is_some());
     }
 
     #[test]
@@ -760,7 +810,7 @@ client_sessions_per_user{username="bob",protocol_type="HTTP2"} 4
         let st = parse_systemctl_show(show, now);
         assert!(!st.active);
         assert_eq!(st.label, "failed");
-        assert!(st.since_label.as_deref().unwrap().starts_with("down "));
+        assert!(st.since_label.is_some());
     }
 
     #[test]

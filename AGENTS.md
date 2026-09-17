@@ -198,13 +198,17 @@ protocol/deep-link format, library API) when relevant.
    TLS handshake rate limits MUST be gated by `limit_inbound_handshakes`, with
    the concurrent cap in `max_concurrent_inbound_handshakes` (default 32), so
    operators behind shared NAT can turn them off or raise them without a rebuild.
-   In `trusttunnel_admin`, any HTML form field deserialized as `Vec<_>` MUST
-   accept both a single string and a repeated sequence (`form::one_or_many`):
-   `application/x-www-form-urlencoded` sends one row as a string, not an array.
+   In `trusttunnel_admin`, repeated HTML table fields (`username`, `cidr`, …)
+   MUST be parsed with `form::form_lists`, not `serde_urlencoded` into `Vec<_>`:
+   interleaved duplicate keys (`username=a&password=x&username=b`) error as
+   `duplicate field`. `form::one_or_many` is only for a single key that is
+   either one string or a consecutive sequence.
    Admin GETs to the endpoint metrics listener (`/clients`, `/metrics`) MUST
    finish once `Content-Length` or a complete chunked body is present. The
    metrics HTTP/1 codec does not close keep-alive GET sockets, so
    `read_to_end` times out and the dashboard shows zero sessions.
+   Login attempts MUST be rate-limited per source IP and globally (bcrypt is
+   expensive on a 1-CPU host). Trust `X-Forwarded-For` only from loopback.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

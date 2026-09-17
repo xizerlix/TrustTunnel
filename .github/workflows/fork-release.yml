@@ -18,8 +18,8 @@ on:
     tags:
       - "custom-*"
 
-  # Tag pushes do not build. Cut a release with:
-  #   gh workflow run fork-release.yml -f tag=custom-x.y.z -f build=admin|all
+  # Tag push (custom-*) builds admin only. Full endpoint+admin:
+  #   gh workflow run fork-release.yml -f tag=custom-x.y.z -f build=all
 
 permissions:
   contents: write
@@ -36,7 +36,7 @@ jobs:
         id: target
         run: |
           TARGET="${{ github.event.inputs.build }}"
-          if [ -z "$TARGET" ]; then TARGET="all"; fi
+          if [ -z "$TARGET" ]; then TARGET="admin"; fi
           echo "build=$TARGET" >> "$GITHUB_OUTPUT"
 
       - name: Install build dependencies

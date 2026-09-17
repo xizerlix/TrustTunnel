@@ -1,13 +1,14 @@
 use crate::apply::{apply, ApplyKind};
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::error::{AdminError, AdminResult};
+use crate::form::{form_col, form_lists};
+use crate::i18n::{self, I18n};
 use crate::models::{RuleAction, RuleEntry, RulesToml};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::Deserialize;
 
 #[derive(Template)]
 #[template(path = "rules.html")]
@@ -15,32 +16,44 @@ pub struct RulesTemplate {
     pub title: String,
     pub username: String,
     pub csrf: String,
+    pub t: I18n,
+    pub lang: &'static str,
     pub rules: RulesToml,
     pub save_status: Option<String>,
     pub error: Option<String>,
     pub action_strs: Vec<String>,
 }
 
+fn page(
+    session: &crate::auth::Session,
+    headers: &HeaderMap,
+    rules: RulesToml,
+    save_status: Option<String>,
+    error: Option<String>,
+) -> RulesTemplate {
+    let lang = i18n::from_headers(headers);
+    let t = i18n::t(lang);
+    let action_strs: Vec<String> = rules.rules.iter().map(|r| action_to_str(&r.action)).collect();
+    RulesTemplate {
+        title: t.rules.into(),
+        username: session.username.clone(),
+        csrf: session.csrf.clone(),
+        t,
+        lang: lang.as_str(),
+        rules,
+        save_status,
+        error,
+        action_strs,
+    }
+}
+
 pub async fn rules_form(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
+    headers: HeaderMap,
 ) -> AdminResult<Response> {
     let rules = load_or_default(&state.paths.rules_toml)?;
-    let action_strs: Vec<String> = rules
-        .rules
-        .iter()
-        .map(|r| action_to_str(&r.action))
-        .collect();
-    Ok(RulesTemplate {
-        title: "Rules".into(),
-        username: session.username,
-        csrf: session.csrf,
-        rules,
-        save_status: None,
-        error: None,
-        action_strs,
-    }
-    .into_response())
+    Ok(page(&session, &headers, rules, None, None).into_response())
 }
 
 pub async fn rules_save(
@@ -50,24 +63,33 @@ pub async fn rules_save(
     body: String,
 ) -> AdminResult<Response> {
     verify_csrf_from_form(&headers, &body, &session).await?;
-    let form: RulesForm = serde_urlencoded::from_str(&body)
-        .map_err(|e| AdminError::Validation(format!("invalid form: {e}")))?;
+    let map = form_lists(&body);
+    let cidrs = form_col(&map, "cidr");
+    let prefixes = form_col(&map, "client_random_prefix");
+    let actions = form_col(&map, "action");
     let mut new_rules = RulesToml::default();
-    for (i, cidr) in form.cidr.iter().enumerate() {
-        if cidr.is_empty() && form.client_random_prefix.get(i).map(|s| s.is_empty()).unwrap_or(true) {
+    let len = cidrs.len().max(prefixes.len()).max(actions.len());
+    for i in 0..len {
+        let cidr = cidrs.get(i).cloned().unwrap_or_default();
+        let prefix = prefixes.get(i).cloned().unwrap_or_default();
+        if cidr.trim().is_empty() && prefix.trim().is_empty() {
             continue;
         }
-        let action = match form.action.get(i).map(|s| s.as_str()).unwrap_or("allow") {
+        let action = match actions.get(i).map(|s| s.as_str()).unwrap_or("allow") {
             "deny" => RuleAction::Deny,
             _ => RuleAction::Allow,
         };
         new_rules.rules.push(RuleEntry {
-            cidr: if cidr.is_empty() { None } else { Some(cidr.clone()) },
-            client_random_prefix: form
-                .client_random_prefix
-                .get(i)
-                .filter(|s| !s.is_empty())
-                .cloned(),
+            cidr: if cidr.trim().is_empty() {
+                None
+            } else {
+                Some(cidr)
+            },
+            client_random_prefix: if prefix.trim().is_empty() {
+                None
+            } else {
+                Some(prefix)
+            },
             action,
         });
     }
@@ -78,21 +100,12 @@ pub async fn rules_save(
         Ok(m) => m.clone(),
         Err(e) => format!("save OK but apply failed: {e}"),
     };
-    let err = if apply_result.is_err() { Some(msg.clone()) } else { None };
-    let resp = RulesTemplate {
-        title: "Rules".into(),
-        username: session.username,
-        csrf: session.csrf,
-        rules: new_rules.clone(),
-        save_status: Some(msg),
-        error: err,
-        action_strs: new_rules
-            .rules
-            .iter()
-            .map(|r| action_to_str(&r.action))
-            .collect(),
-    }
-    .into_response();
+    let err = if apply_result.is_err() {
+        Some(msg.clone())
+    } else {
+        None
+    };
+    let resp = page(&session, &headers, new_rules, Some(msg), err).into_response();
     let s = if apply_result.is_err() {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
@@ -116,12 +129,32 @@ fn action_to_str(a: &RuleAction) -> String {
     }
 }
 
-#[derive(Deserialize)]
-pub struct RulesForm {
-    #[serde(default, deserialize_with = "crate::form::one_or_many")]
-    pub cidr: Vec<String>,
-    #[serde(default, deserialize_with = "crate::form::one_or_many")]
-    pub client_random_prefix: Vec<String>,
-    #[serde(default, deserialize_with = "crate::form::one_or_many")]
-    pub action: Vec<String>,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interleaved_cidr_parses() {
+        let map = form_lists("cidr=1.1.1.0/24&action=deny&cidr=&client_random_prefix=&action=allow");
+        assert_eq!(form_col(&map, "cidr").len(), 2);
+    }
+
+    #[test]
+    fn empty_cidr_and_prefix_are_skipped() {
+        let map = form_lists("cidr=&client_random_prefix=&action=allow&cidr=10.0.0.0/8&action=deny");
+        let cidrs = form_col(&map, "cidr");
+        let prefixes = form_col(&map, "client_random_prefix");
+        let actions = form_col(&map, "action");
+        let mut kept = 0;
+        let len = cidrs.len().max(prefixes.len()).max(actions.len());
+        for i in 0..len {
+            let cidr = cidrs.get(i).cloned().unwrap_or_default();
+            let prefix = prefixes.get(i).cloned().unwrap_or_default();
+            if cidr.trim().is_empty() && prefix.trim().is_empty() {
+                continue;
+            }
+            kept += 1;
+        }
+        assert_eq!(kept, 1);
+    }
 }

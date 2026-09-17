@@ -1,6 +1,49 @@
 use serde::de::{self, Deserializer, Visitor};
+use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
+
+/// Collect repeated `application/x-www-form-urlencoded` keys.
+/// `serde_urlencoded` treats a second `username=` as `duplicate field`.
+pub fn form_lists(body: &str) -> HashMap<String, Vec<String>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    for (k, v) in form_urlencoded::parse(body.as_bytes()) {
+        out.entry(k.into_owned()).or_default().push(v.into_owned());
+    }
+    out
+}
+
+pub fn form_col(map: &HashMap<String, Vec<String>>, key: &str) -> Vec<String> {
+    map.get(key).cloned().unwrap_or_default()
+}
+
+pub const GIB: f64 = 1_073_741_824.0;
+
+pub fn bytes_to_gib_field(bytes: u64) -> String {
+    if bytes == 0 {
+        return String::new();
+    }
+    let gb = bytes as f64 / GIB;
+    if (gb - gb.round()).abs() < 0.0005 {
+        format!("{}", gb.round() as u64)
+    } else {
+        let s = format!("{gb:.3}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+pub fn gib_field_to_bytes(s: &str) -> u64 {
+    let s = s.trim().replace(',', ".");
+    if s.is_empty() {
+        return 0;
+    }
+    let v: f64 = s.parse().unwrap_or(0.0);
+    if v <= 0.0 {
+        0
+    } else {
+        (v * GIB).round() as u64
+    }
+}
 
 /// `application/x-www-form-urlencoded` sends a single field as a string and
 /// repeated fields as a sequence. Accept both so a one-row table still saves.
@@ -85,5 +128,20 @@ mod tests {
     fn missing_field_is_empty() {
         let row: Row = serde_urlencoded::from_str("").unwrap();
         assert!(row.main_hostname.is_empty());
+    }
+
+    #[test]
+    fn form_lists_keeps_interleaved_keys() {
+        let map = form_lists("username=alice&password=a&username=test&password=b");
+        assert_eq!(form_col(&map, "username"), vec!["alice", "test"]);
+        assert_eq!(form_col(&map, "password"), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn gib_roundtrip() {
+        assert_eq!(bytes_to_gib_field(0), "");
+        assert_eq!(gib_field_to_bytes(""), 0);
+        assert_eq!(gib_field_to_bytes("1"), 1_073_741_824);
+        assert_eq!(bytes_to_gib_field(1_073_741_824), "1");
     }
 }

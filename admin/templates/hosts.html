@@ -1,42 +1,45 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">TLS hosts</h1>
+<h1 class="text-3xl font-semibold mb-6">{{ t.tls_hosts }}</h1>
 
 {% if let Some(s) = save_status %}
-  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+  <div class="bg-emerald-100 text-emerald-800 p-3 rounded mb-4">{{ s }}</div>
 {% endif %}
 {% if let Some(e) = error %}
-  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+  <div class="bg-rose-100 text-rose-800 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
-<form method="post" action="/hosts" class="space-y-6"><input type="hidden" name="csrf" value="{{ csrf }}">
-  <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
-    <legend class="text-lg font-semibold px-2">Main hosts (used by clients)</legend>
-    <p class="text-xs text-slate-400 mb-3">Edits are applied via SIGHUP — the service reloads hosts.toml without a full restart. Active connections are not interrupted.</p>
-    <table class="w-full text-sm">
-      <thead><tr class="text-left">
-        <th class="p-2">Hostname</th>
-        <th class="p-2">Cert chain path</th>
-        <th class="p-2">Private key path</th>
-        <th class="p-2">Allowed SNI (comma)</th>
-      </tr></thead>
-      <tbody>
+<form method="post" action="/hosts" class="space-y-6 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset class="bg-white p-6 rounded shadow">
+    <legend class="text-lg font-semibold px-2">{{ t.tls_hosts }}</legend>
+    <div class="space-y-6">
       {% for h in hosts.main_hosts %}
-        <tr>
-          <td class="p-2"><input type="text" name="main_hostname" value="{{ h.hostname }}" required></td>
-          <td class="p-2"><input type="text" name="main_cert" value="{{ h.cert_chain_path }}" required></td>
-          <td class="p-2"><input type="text" name="main_key" value="{{ h.private_key_path }}" required></td>
-          <td class="p-2"><input type="text" name="main_allowed_sni" value="{{ h.allowed_sni.join(",") }}"></td>
-        </tr>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-slate-100 pb-6">
+        <label class="block">
+          <span class="block text-sm font-medium mb-1">{{ t.hostname }}</span>
+          <input type="text" name="main_hostname" value="{{ h.hostname }}" required>
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium mb-1">{{ t.cert_path }}</span>
+          <input type="text" name="main_cert" value="{{ h.cert_chain_path }}" required>
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium mb-1">{{ t.key_path }}</span>
+          <input type="text" name="main_key" value="{{ h.private_key_path }}" required>
+        </label>
+        <label class="block md:col-span-2">
+          <span class="block text-sm font-medium mb-1">{{ t.allowed_sni }}</span>
+          <textarea name="main_allowed_sni" rows="3">{{ h.sni_text() }}</textarea>
+          <p class="text-xs text-slate-500 mt-1">{{ t.sni_help }}</p>
+        </label>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
-    <p class="text-xs text-slate-400 mt-2">To add or remove rows, edit <code>hosts.toml</code> directly on the server and click Save — the UI sends the table back as-is.</p>
+    </div>
   </fieldset>
 
   <div class="flex justify-end">
     <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">
-      Save &amp; reload (SIGHUP)
+      {{ t.save_reload }}
     </button>
   </div>
 </form>

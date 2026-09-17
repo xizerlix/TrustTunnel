@@ -1,45 +1,42 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">Rules</h1>
+<h1 class="text-3xl font-semibold mb-6">{{ t.rules }}</h1>
 
-<p class="text-sm text-slate-400 mb-4">
-  Connection filtering rules. First match wins. Empty rows are ignored. Both <code>cidr</code> and <code>client_random_prefix</code> are optional, but at least one must be set per rule.
-</p>
+<p class="text-sm text-slate-500 mb-4">{{ t.rules_help }}</p>
 
 {% if let Some(s) = save_status %}
-  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+  <div class="bg-emerald-100 text-emerald-800 p-3 rounded mb-4">{{ s }}</div>
 {% endif %}
 {% if let Some(e) = error %}
-  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+  <div class="bg-rose-100 text-rose-800 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
-<form method="post" action="/rules" class="space-y-4"><input type="hidden" name="csrf" value="{{ csrf }}">
-  <table class="w-full bg-white dark:bg-slate-800 rounded shadow text-sm">
+<form method="post" action="/rules" class="space-y-4 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
+  <table class="w-full bg-white rounded shadow text-sm">
     <thead>
-      <tr class="text-left border-b border-slate-200 dark:border-slate-700">
-        <th class="p-2">CIDR</th>
-        <th class="p-2">Client random prefix / mask</th>
-        <th class="p-2">Action</th>
+      <tr class="text-left border-b border-slate-200">
+        <th class="p-2">{{ t.cidr }}</th>
+        <th class="p-2">{{ t.prefix }}</th>
+        <th class="p-2">{{ t.action }}</th>
+        <th class="p-2"></th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="rules-body">
       {% for r in rules.rules %}
       {% let idx = loop.index0 %}
-      <tr class="border-b border-slate-100 dark:border-slate-700">
+      <tr class="border-b border-slate-100 js-rule-row">
         <td class="p-2"><input type="text" name="cidr" value="{{ r.cidr.as_deref().unwrap_or("") }}" placeholder="1.2.3.0/24"></td>
-        <td class="p-2"><input type="text" name="client_random_prefix" value="{{ r.client_random_prefix.as_deref().unwrap_or("") }}" placeholder="aabbcc or aabbcc/ff00ff"></td>
+        <td class="p-2"><input type="text" name="client_random_prefix" value="{{ r.client_random_prefix.as_deref().unwrap_or("") }}" placeholder="aabbcc"></td>
         <td class="p-2">
           <select name="action">
             <option value="allow" {% if action_strs[idx] == "allow" %}selected{% endif %}>allow</option>
             <option value="deny" {% if action_strs[idx] == "deny" %}selected{% endif %}>deny</option>
           </select>
         </td>
+        <td class="p-2"><button type="button" class="js-del-row px-2 py-1 text-xs bg-rose-600 text-white rounded">{{ t.delete }}</button></td>
       </tr>
       {% endfor %}
-      {% if rules.rules.is_empty() %}
-      <tr><td colspan="3" class="p-4 text-center text-slate-400">No rules. All connections are allowed.</td></tr>
-      {% endif %}
-      <tr>
+      <tr class="js-rule-row">
         <td class="p-2"><input type="text" name="cidr" placeholder="1.2.3.0/24"></td>
         <td class="p-2"><input type="text" name="client_random_prefix" placeholder="aabbcc"></td>
         <td class="p-2">
@@ -48,14 +45,23 @@
             <option value="allow">allow</option>
           </select>
         </td>
+        <td class="p-2"><button type="button" class="js-del-row px-2 py-1 text-xs bg-rose-600 text-white rounded">{{ t.delete }}</button></td>
       </tr>
     </tbody>
   </table>
 
   <div class="flex justify-end">
     <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">
-      Save &amp; restart
+      {{ t.save_restart }}
     </button>
   </div>
 </form>
+<script>
+document.getElementById('rules-body').addEventListener('click', function (e) {
+  var btn = e.target.closest('.js-del-row');
+  if (!btn) return;
+  var row = btn.closest('tr');
+  if (row) row.remove();
+});
+</script>
 {% endblock %}

@@ -1,6 +1,7 @@
 use crate::apply::{apply, ApplyKind};
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::error::{AdminError, AdminResult, WithStatusExt};
+use crate::i18n::{self, I18n};
 use crate::models::VpnToml;
 use crate::state::AppState;
 use askama::Template;
@@ -15,6 +16,8 @@ pub struct VpnTemplate {
     pub title: String,
     pub username: String,
     pub csrf: String,
+    pub t: I18n,
+    pub lang: &'static str,
     pub vpn: VpnToml,
     pub save_status: Option<String>,
     pub error: Option<String>,
@@ -23,15 +26,18 @@ pub struct VpnTemplate {
 pub async fn vpn_form(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
+    headers: HeaderMap,
 ) -> AdminResult<Response> {
-    let content = std::fs::read_to_string(&state.paths.vpn_toml)
-        .map_err(|e| AdminError::Io(e))?;
-    let vpn: VpnToml =
-        toml::from_str(&content).map_err(AdminError::TomlDe)?;
+    let content = std::fs::read_to_string(&state.paths.vpn_toml).map_err(AdminError::Io)?;
+    let vpn: VpnToml = toml::from_str(&content).map_err(AdminError::TomlDe)?;
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     Ok(VpnTemplate {
-        title: "VPN settings".into(),
+        title: t.vpn_settings.into(),
         username: session.username,
         csrf: session.csrf,
+        t,
+        lang: lang.as_str(),
         vpn,
         save_status: None,
         error: None,
@@ -67,10 +73,14 @@ pub async fn vpn_save(
         None
     };
 
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
     Ok(VpnTemplate {
-        title: "VPN settings".into(),
+        title: t.vpn_settings.into(),
         username: session.username,
         csrf: session.csrf,
+        t,
+        lang: lang.as_str(),
         vpn,
         save_status: Some(status),
         error,

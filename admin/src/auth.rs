@@ -72,6 +72,7 @@ impl SessionStore {
 #[derive(Default)]
 pub struct LoginLimiter {
     inner: RwLock<HashMap<IpAddr, LoginBucket>>,
+    global: RwLock<LoginBucket>,
 }
 
 struct LoginBucket {
@@ -79,28 +80,44 @@ struct LoginBucket {
     window_start: Instant,
 }
 
+impl Default for LoginBucket {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            window_start: Instant::now(),
+        }
+    }
+}
+
 impl LoginLimiter {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
 
-    pub async fn check(&self, ip: IpAddr, per_min: u32) -> bool {
-        let mut guard = self.inner.write().await;
-        let bucket = guard.entry(ip).or_insert(LoginBucket {
-            count: 0,
-            window_start: Instant::now(),
-        });
-        if bucket.window_start.elapsed() > Duration::from_secs(60) {
-            bucket.count = 0;
-            bucket.window_start = Instant::now();
+    pub async fn check(&self, ip: IpAddr, per_ip: u32, global_per_min: u32) -> bool {
+        let mut global = self.global.write().await;
+        let mut ips = self.inner.write().await;
+        reset_bucket(&mut global);
+        let bucket = ips.entry(ip).or_default();
+        reset_bucket(bucket);
+        if global.count >= global_per_min || bucket.count >= per_ip {
+            return false;
         }
-        bucket.count += 1;
-        bucket.count <= per_min
+        global.count = global.count.saturating_add(1);
+        bucket.count = bucket.count.saturating_add(1);
+        true
     }
 
     pub async fn cleanup_expired(&self) {
         let mut guard = self.inner.write().await;
         guard.retain(|_, b| b.window_start.elapsed() <= Duration::from_secs(120));
+    }
+}
+
+fn reset_bucket(bucket: &mut LoginBucket) {
+    if bucket.window_start.elapsed() > Duration::from_secs(60) {
+        bucket.count = 0;
+        bucket.window_start = Instant::now();
     }
 }
 
@@ -270,6 +287,31 @@ fn url_decode(s: &str) -> Option<String> {
         }
     }
     String::from_utf8(out).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[tokio::test]
+    async fn per_ip_cap_blocks_further_attempts() {
+        let limiter = LoginLimiter::new();
+        let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
+        for _ in 0..3 {
+            assert!(limiter.check(ip, 3, 10).await);
+        }
+        assert!(!limiter.check(ip, 3, 10).await);
+    }
+
+    #[tokio::test]
+    async fn global_cap_blocks_other_ips() {
+        let limiter = LoginLimiter::new();
+        let a = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1));
+        let b = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 2));
+        assert!(limiter.check(a, 5, 1).await);
+        assert!(!limiter.check(b, 5, 1).await);
+    }
 }
 
 fn hex_digit(b: u8) -> Option<u8> {

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">VPN settings</h1>
+<h1 class="text-3xl font-semibold mb-6">{{ t.vpn_settings }}</h1>
 
 {% if let Some(s) = save_status %}
   <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
@@ -9,7 +9,7 @@
   <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
-<form method="post" action="/vpn" class="space-y-6"><input type="hidden" name="csrf" value="{{ csrf }}">
+<form method="post" action="/vpn" class="space-y-6 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
   <fieldset class="bg-white dark:bg-slate-800 p-6 rounded shadow">
     <legend class="text-lg font-semibold px-2">Network</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +137,7 @@
 
   <div class="flex justify-end">
     <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">
-      Save &amp; restart
+      {{ t.save_restart }}
     </button>
   </div>
 </form>

@@ -1,32 +1,29 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-3xl font-semibold mb-6">Settings</h1>
+<h1 class="text-3xl font-semibold mb-6">{{ t.settings }}</h1>
 
 {% if let Some(s) = status %}
-  <div class="bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 p-3 rounded mb-4">{{ s }}</div>
+  <div class="bg-emerald-100 text-emerald-800 p-3 rounded mb-4">{{ s }}</div>
 {% endif %}
 {% if let Some(e) = error %}
-  <div class="bg-rose-100 dark:bg-rose-900 text-rose-800 dark:text-rose-200 p-3 rounded mb-4">{{ e }}</div>
+  <div class="bg-rose-100 text-rose-800 p-3 rounded mb-4">{{ e }}</div>
 {% endif %}
 
-<h2 class="text-xl font-semibold mb-2">Change admin password</h2>
-<form method="post" action="/settings" class="space-y-4 max-w-md bg-white dark:bg-slate-800 p-6 rounded shadow">
+<h2 class="text-xl font-semibold mb-2">{{ t.change_password }}</h2>
+<form method="post" action="/settings" class="space-y-4 max-w-md bg-white p-6 rounded shadow js-save-wait">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label class="block">
-    <span class="block text-sm font-medium mb-1">Current password</span>
-    <input type="password" name="current_password" required autocomplete="current-password"
-           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+    <span class="block text-sm font-medium mb-1">{{ t.current_password }}</span>
+    <input type="password" name="current_password" required autocomplete="current-password">
   </label>
   <label class="block">
-    <span class="block text-sm font-medium mb-1">New password (min 10 chars)</span>
-    <input type="password" name="new_password" required minlength="10" autocomplete="new-password"
-           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+    <span class="block text-sm font-medium mb-1">{{ t.new_password }}</span>
+    <input type="password" name="new_password" required minlength="10" autocomplete="new-password">
   </label>
   <label class="block">
-    <span class="block text-sm font-medium mb-1">Confirm new password</span>
-    <input type="password" name="confirm_password" required minlength="10" autocomplete="new-password"
-           class="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900">
+    <span class="block text-sm font-medium mb-1">{{ t.confirm_password }}</span>
+    <input type="password" name="confirm_password" required minlength="10" autocomplete="new-password">
   </label>
-  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">Update password</button>
+  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.update_password }}</button>
 </form>
 {% endblock %}

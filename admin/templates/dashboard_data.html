@@ -1,64 +1,87 @@
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
-    <div class="text-sm text-slate-500">Service</div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-sm text-slate-500">{{ t.service }}</div>
     {% if service_active %}
-      <div class="text-2xl font-semibold mt-1 text-emerald-600 dark:text-emerald-400">{{ service_label }}</div>
+      <div class="text-2xl font-semibold mt-1 text-emerald-600">{{ service_label }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ t.up }}{% if let Some(u) = since_label %} {{ u }}{% endif %}</div>
     {% else %}
-      <div class="text-2xl font-semibold mt-1 text-rose-600 dark:text-rose-400">{{ service_label }}</div>
-    {% endif %}
-    {% if let Some(u) = since_label %}
-      <div class="text-xs text-slate-400 mt-1">{{ u }}</div>
+      <div class="text-2xl font-semibold mt-1 text-rose-600">{{ service_label }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ t.down }}{% if let Some(u) = since_label %} {{ u }}{% endif %}</div>
     {% endif %}
   </div>
-  <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
-    <div class="text-sm text-slate-500">Active users / Unique IPs</div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-sm text-slate-500">{{ t.active_users_ips }}</div>
     <div class="text-2xl font-semibold mt-1">{{ clients_count }} / {{ unique_ips }}</div>
   </div>
-  <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
-    <div class="text-sm text-slate-500">Active sessions</div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-sm text-slate-500">{{ t.active_sessions }}</div>
     <div class="text-2xl font-semibold mt-1">{{ session_total }}</div>
   </div>
-  <div class="bg-white dark:bg-slate-800 p-4 rounded shadow">
-    <div class="text-sm text-slate-500">Traffic this period</div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-sm text-slate-500">{{ t.traffic_period }}</div>
     <div class="text-lg mt-1">↑ {{ traffic_outbound_h }}</div>
     <div class="text-lg">↓ {{ traffic_inbound_h }}</div>
     <div class="text-sm text-slate-400 mt-1">Σ {{ traffic_total_h }}</div>
   </div>
 </div>
 
-<h2 class="text-xl font-semibold mb-2">Per-user summary</h2>
+<h2 class="text-xl font-semibold mb-2">{{ t.per_user }}</h2>
 {% if users.is_empty() %}
-  <div class="text-slate-500">No users configured.</div>
+  <div class="text-slate-500">{{ t.no_users }}</div>
 {% else %}
-<div class="bg-white dark:bg-slate-800 rounded shadow overflow-x-auto">
+<div class="bg-white rounded shadow overflow-x-auto">
 <table class="w-full text-sm">
-  <thead class="text-left border-b border-slate-200 dark:border-slate-700">
+  <thead class="text-left border-b border-slate-200">
     <tr>
-      <th class="p-2">Username</th>
-      <th class="p-2">Sessions</th>
-      <th class="p-2">IPs</th>
-      <th class="p-2">Traffic used</th>
-      <th class="p-2">Quota</th>
+      <th class="p-2">{{ t.username }}</th>
+      <th class="p-2">{{ t.sessions }}</th>
+      <th class="p-2">{{ t.ips }}</th>
+      <th class="p-2">{{ t.traffic_used }}</th>
+      <th class="p-2">{{ t.quota }}</th>
     </tr>
   </thead>
   <tbody>
   {% for c in users %}
-    <tr class="border-b border-slate-100 dark:border-slate-700 {% if !c.active %}opacity-50{% endif %}">
+    <tr class="border-b border-slate-100 {% if !c.active %}opacity-50{% endif %}">
       <td class="p-2 font-medium">
         {{ c.username }}
-        {% if !c.active %}<span class="text-xs text-slate-400 ml-1">(offline)</span>{% endif %}
+        {% if !c.active %}<span class="text-xs text-slate-400 ml-1">({{ t.offline }})</span>{% endif %}
       </td>
       <td class="p-2">{{ c.sessions }}</td>
-      <td class="p-2 text-xs text-slate-500">{{ c.ips_label }}</td>
+      <td class="p-2 text-xs text-slate-600">
+        {% if c.ips.is_empty() %}
+          —
+        {% else %}
+          {% for ip in c.ips %}
+          <div class="flex items-center gap-1 py-0.5">
+            {% if ip.kind == "mobile" %}
+            <svg class="h-3.5 w-3.5 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="currentColor"><title>{{ t.mobile }}</title><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm5 18a1.25 1.25 0 1 0 0-2.5A1.25 1.25 0 0 0 12 20z"/></svg>
+            {% else %}
+              {% if ip.kind == "proxy" %}
+            <svg class="h-3.5 w-3.5 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="currentColor"><title>{{ t.proxy }}</title><path d="M12 2 4 6v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V6l-8-4z"/></svg>
+              {% else %}
+                {% if ip.kind == "hosting" %}
+            <svg class="h-3.5 w-3.5 shrink-0 text-sky-600" viewBox="0 0 24 24" fill="currentColor"><title>{{ t.hosting }}</title><path d="M4 18h16v2H4v-2zm0-5h16v2H4v-2zm2-9h12l2 6H4l2-6z"/></svg>
+                {% else %}
+            <svg class="h-3.5 w-3.5 shrink-0 text-emerald-600" viewBox="0 0 24 24" fill="currentColor"><title>{{ t.home }}</title><path d="M12 3 3 10h2v9h6v-6h2v6h6v-9h2L12 3z"/></svg>
+                {% endif %}
+              {% endif %}
+            {% endif %}
+            <span>{{ ip.address }}</span>
+            <span class="text-slate-400">{{ ip.connected_h }}</span>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </td>
       <td class="p-2">
         <div>{{ c.total_h }}</div>
         <div class="text-xs text-slate-400">↓ {{ c.inbound_h }} · ↑ {{ c.outbound_h }}</div>
       </td>
       <td class="p-2">
         <div class="flex items-center gap-2">
-          <span class="text-xs">{{ c.quota_limit_h }}</span>
+          <span class="text-xs">{% if c.quota_limit_h == "∞" %}{{ t.unlimited }}{% else %}{{ c.quota_limit_h }}{% endif %}</span>
           {% if c.quota_limit_h != "∞" %}
-          <div class="w-24 h-2 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
+          <div class="w-24 h-2 bg-slate-200 rounded overflow-hidden">
             <div class="h-full {% if c.quota_exceeded %}bg-rose-500{% else %}bg-indigo-500{% endif %}"
                  style="width: {{ c.quota_used_pct }}%"></div>
           </div>

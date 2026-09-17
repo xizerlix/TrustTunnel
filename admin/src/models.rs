@@ -184,6 +184,12 @@ pub struct HostEntry {
     pub allowed_sni: Vec<String>,
 }
 
+impl HostEntry {
+    pub fn sni_text(&self) -> String {
+        self.allowed_sni.join("\n")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientEntry {
     pub username: String,
@@ -273,6 +279,22 @@ impl VpnToml {
     }
     pub fn to_string_pretty(&self) -> anyhow::Result<String> {
         Ok(toml::to_string_pretty(self)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sni_text_joins_lines() {
+        let h = HostEntry {
+            hostname: "a.example".into(),
+            cert_chain_path: "/c".into(),
+            private_key_path: "/k".into(),
+            allowed_sni: vec!["a.example".into(), "front.example".into()],
+        };
+        assert_eq!(h.sni_text(), "a.example\nfront.example");
     }
 }
 

@@ -1,0 +1,440 @@
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+const BOT_SEEN: &str = "/tmp/vpn_times/active_vpn.json";
+const OUR_SEEN: &str = "/tmp/trusttunnel_admin_seen.json";
+const GEO_DIR: &str = "/tmp/vpn_times/geo";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IpKind {
+    Home,
+    Mobile,
+    Proxy,
+    Hosting,
+}
+
+impl IpKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            IpKind::Home => "home",
+            IpKind::Mobile => "mobile",
+            IpKind::Proxy => "proxy",
+            IpKind::Hosting => "hosting",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IpView {
+    pub address: String,
+    pub connected_h: String,
+    pub kind: &'static str,
+}
+
+pub struct LiveCache {
+    seen: Mutex<HashMap<String, u64>>,
+    geo: Mutex<HashMap<String, CachedGeo>>,
+    last_lookup: Mutex<Instant>,
+}
+
+#[derive(Clone, Copy)]
+struct CachedGeo {
+    kind: IpKind,
+    expire: Instant,
+}
+
+impl LiveCache {
+    pub fn new() -> Self {
+        let seen = load_json_map(OUR_SEEN)
+            .into_iter()
+            .chain(load_json_map(BOT_SEEN))
+            .collect();
+        Self {
+            seen: Mutex::new(seen),
+            geo: Mutex::new(HashMap::new()),
+            last_lookup: Mutex::new(Instant::now() - Duration::from_secs(60)),
+        }
+    }
+
+    pub fn sync_ips(&self, pairs: &[(String, String)]) -> Vec<IpView> {
+        let now = unix_now();
+        let live_keys: Vec<String> = pairs
+            .iter()
+            .map(|(u, ip)| format!("{u}|{ip}"))
+            .collect();
+        {
+            let mut seen = self.seen.lock().unwrap();
+            for (k, v) in load_json_map(BOT_SEEN) {
+                seen.entry(k).or_insert(v);
+            }
+            for key in &live_keys {
+                seen.entry(key.clone()).or_insert(now);
+            }
+            seen.retain(|k, _| live_keys.iter().any(|l| l == k));
+            let _ = std::fs::write(OUR_SEEN, serde_json::to_string(&*seen).unwrap_or_else(|_| "{}".into()));
+        }
+        let mut out = Vec::new();
+        for (user, ip) in pairs {
+            let key = format!("{user}|{ip}");
+            let start = self
+                .seen
+                .lock()
+                .unwrap()
+                .get(&key)
+                .copied()
+                .unwrap_or(now);
+            let age = now.saturating_sub(start);
+            out.push(IpView {
+                address: ip.clone(),
+                connected_h: humanize_nosec(age),
+                kind: self.lookup_kind(ip).as_str(),
+            });
+        }
+        out
+    }
+
+    fn lookup_kind(&self, ip: &str) -> IpKind {
+        if is_private_ip(ip) {
+            return IpKind::Home;
+        }
+        if let Some(c) = self.geo.lock().unwrap().get(ip).copied() {
+            if c.expire > Instant::now() {
+                return c.kind;
+            }
+        }
+        let disk = disk_geo(ip);
+        if let Some(kind) = disk {
+            self.geo.lock().unwrap().insert(
+                ip.to_string(),
+                CachedGeo {
+                    kind,
+                    expire: Instant::now() + Duration::from_secs(86_400),
+                },
+            );
+            return kind;
+        }
+        let mut last = self.last_lookup.lock().unwrap();
+        if last.elapsed() < Duration::from_secs(3) {
+            return IpKind::Home;
+        }
+        *last = Instant::now();
+        drop(last);
+        let kind = fetch_geo(ip).unwrap_or(IpKind::Home);
+        save_disk_geo(ip, kind);
+        self.geo.lock().unwrap().insert(
+            ip.to_string(),
+            CachedGeo {
+                kind,
+                expire: Instant::now() + Duration::from_secs(86_400),
+            },
+        );
+        kind
+    }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn load_json_map(path: &str) -> HashMap<String, u64> {
+    let Ok(s) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    serde_json::from_str(&s).unwrap_or_default()
+}
+
+pub fn humanize_nosec(secs: u64) -> String {
+    let days = secs / 86_400;
+    let hours = (secs % 86_400) / 3_600;
+    let mins = (secs % 3_600) / 60;
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {mins}m")
+    } else if mins > 0 {
+        format!("{mins}m")
+    } else {
+        "<1m".into()
+    }
+}
+
+pub fn is_private_ip(s: &str) -> bool {
+    let Ok(ip) = s.parse::<IpAddr>() else {
+        return true;
+    };
+    match ip {
+        IpAddr::V4(v) => v.is_private() || v.is_loopback() || v.is_link_local(),
+        IpAddr::V6(v) => v.is_loopback() || v.is_unique_local() || v.is_unicast_link_local(),
+    }
+}
+
+fn disk_geo(ip: &str) -> Option<IpKind> {
+    let path = geo_path(ip);
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta.modified().ok()?;
+    if SystemTime::now().duration_since(mtime).ok()? > Duration::from_secs(86_400) {
+        return None;
+    }
+    let s = std::fs::read_to_string(&path).ok()?;
+    parse_geo_json(&s)
+}
+
+fn save_disk_geo(ip: &str, kind: IpKind) {
+    let _ = std::fs::create_dir_all(GEO_DIR);
+    let body = format!(
+        "{{\"mobile\":{},\"proxy\":{},\"hosting\":{}}}",
+        kind == IpKind::Mobile,
+        kind == IpKind::Proxy,
+        kind == IpKind::Hosting
+    );
+    let _ = std::fs::write(geo_path(ip), body);
+}
+
+fn geo_path(ip: &str) -> PathBuf {
+    let slug: String = ip
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == ':' { c } else { '_' })
+        .collect();
+    PathBuf::from(GEO_DIR).join(format!("{slug}.json"))
+}
+
+fn parse_geo_json(s: &str) -> Option<IpKind> {
+    #[derive(Deserialize)]
+    struct G {
+        #[serde(default)]
+        mobile: bool,
+        #[serde(default)]
+        proxy: bool,
+        #[serde(default)]
+        hosting: bool,
+    }
+    let g: G = serde_json::from_str(s).ok()?;
+    if g.mobile {
+        Some(IpKind::Mobile)
+    } else if g.proxy {
+        Some(IpKind::Proxy)
+    } else if g.hosting {
+        Some(IpKind::Hosting)
+    } else {
+        Some(IpKind::Home)
+    }
+}
+
+fn fetch_geo(ip: &str) -> Option<IpKind> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::net::ToSocketAddrs;
+    let addr = "ip-api.com:80".to_socket_addrs().ok()?.next()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(1200))).ok()?;
+    stream.set_write_timeout(Some(Duration::from_secs(1))).ok()?;
+    let path = format!("/json/{ip}?fields=status,mobile,proxy,hosting");
+    let req = format!("GET {path} HTTP/1.0\r\nHost: ip-api.com\r\n\r\n");
+    stream.write_all(req.as_bytes()).ok()?;
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 2048];
+    loop {
+        match stream.read(&mut tmp) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&tmp[..n]);
+                if buf.len() > 8192 {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let body = text.split("\r\n\r\n").nth(1)?;
+    parse_geo_json(body)
+}
+
+pub fn parse_host_snapshot() -> HostSnapshot {
+    HostSnapshot {
+        load: read_load(),
+        ram: read_ram(),
+        disk: read_disk(),
+        uptime: read_host_uptime(),
+        version: read_tt_version(),
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct HostSnapshot {
+    pub load: String,
+    pub ram: String,
+    pub disk: String,
+    pub uptime: String,
+    pub version: String,
+}
+
+fn read_load() -> String {
+    std::fs::read_to_string("/proc/loadavg")
+        .ok()
+        .and_then(|s| s.split_whitespace().next().map(str::to_string))
+        .unwrap_or_else(|| "—".into())
+}
+
+fn read_ram() -> String {
+    let Ok(s) = std::fs::read_to_string("/proc/meminfo") else {
+        return "—".into();
+    };
+    let mut total = 0u64;
+    let mut avail = 0u64;
+    for line in s.lines() {
+        let mut p = line.split_whitespace();
+        match p.next() {
+            Some("MemTotal:") => total = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            Some("MemAvailable:") => avail = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            _ => {}
+        }
+    }
+    if total == 0 {
+        return "—".into();
+    }
+    let used = total.saturating_sub(avail);
+    let pct = (used as f64 / total as f64) * 100.0;
+    format!(
+        "{:.0}% ({:.0}/{:.0} MB)",
+        pct,
+        used as f64 / 1024.0,
+        total as f64 / 1024.0
+    )
+}
+
+fn read_disk() -> String {
+    let out = std::process::Command::new("df")
+        .args(["-h", "/"])
+        .output()
+        .ok();
+    let Some(out) = out else {
+        return "—".into();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .nth(1)
+        .and_then(|l| l.split_whitespace().nth(4))
+        .unwrap_or("—")
+        .to_string()
+}
+
+fn read_host_uptime() -> String {
+    let Ok(s) = std::fs::read_to_string("/proc/uptime") else {
+        return "—".into();
+    };
+    let secs = s
+        .split_whitespace()
+        .next()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0) as u64;
+    humanize_nosec(secs)
+}
+
+fn read_tt_version() -> String {
+    let bin = std::path::Path::new("/opt/trusttunnel/trusttunnel_endpoint");
+    let out = std::process::Command::new(bin).arg("--version").output().ok();
+    let Some(out) = out else {
+        return "—".into();
+    };
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+pub fn read_cert_summary(cert_path: &str) -> Option<(String, String)> {
+    let out = std::process::Command::new("openssl")
+        .args(["x509", "-in", cert_path, "-noout", "-subject", "-enddate"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut subject = String::new();
+    let mut end = String::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("subject=") {
+            subject = rest
+                .rsplit("CN = ")
+                .next()
+                .or_else(|| rest.rsplit("CN=").next())
+                .unwrap_or(rest)
+                .trim()
+                .to_string();
+        }
+        if let Some(rest) = line.strip_prefix("notAfter=") {
+            end = rest.trim().to_string();
+            let parts: Vec<&str> = end.split_whitespace().collect();
+            if parts.len() >= 5 {
+                let hm: String = parts[2].split(':').take(2).collect::<Vec<_>>().join(":");
+                end = format!("{} {} {} {} {}", parts[0], parts[1], hm, parts[3], parts[4]);
+            }
+        }
+    }
+    if subject.is_empty() && end.is_empty() {
+        None
+    } else {
+        Some((subject, end))
+    }
+}
+
+pub fn htop_snapshot() -> String {
+    let top = std::process::Command::new("top")
+        .args(["-b", "-n", "1", "-w", "180"])
+        .output();
+    if let Ok(out) = top {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout);
+            return s.lines().take(40).collect::<Vec<_>>().join("\n");
+        }
+    }
+    let ps = std::process::Command::new("ps")
+        .args(["-eo", "pid,user,pcpu,pmem,comm", "--sort=-pcpu"])
+        .output();
+    match ps {
+        Ok(out) => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .take(30)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Err(e) => format!("ps/top unavailable: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_ips_are_home() {
+        assert!(is_private_ip("10.0.0.1"));
+        assert!(is_private_ip("192.168.1.1"));
+        assert!(is_private_ip("127.0.0.1"));
+        assert!(!is_private_ip("8.8.8.8"));
+    }
+
+    #[test]
+    fn duration_hides_seconds() {
+        assert_eq!(humanize_nosec(40), "<1m");
+        assert_eq!(humanize_nosec(90), "1m");
+        assert_eq!(humanize_nosec(3700), "1h 1m");
+    }
+
+    #[test]
+    fn geo_json_mobile() {
+        assert_eq!(
+            parse_geo_json("{\"mobile\":true,\"proxy\":false,\"hosting\":false}"),
+            Some(IpKind::Mobile)
+        );
+        assert_eq!(
+            parse_geo_json("{\"mobile\":false,\"proxy\":false,\"hosting\":false}"),
+            Some(IpKind::Home)
+        );
+    }
+}

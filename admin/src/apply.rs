@@ -323,16 +323,21 @@ pub fn systemctl_show(service: &str) -> AdminResult<String> {
             "ActiveEnterTimestampUSec",
             "-p",
             "InactiveEnterTimestampUSec",
+            "-p",
+            "ExecMainStartTimestampUSec",
             "--no-pager",
         ])
         .output()?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-pub fn journalctl_logs(service: &str, lines: usize) -> AdminResult<String> {
-    let out = Command::new("journalctl")
-        .args(["-u", service, "-n", &lines.to_string(), "--no-pager"])
-        .output()?;
+pub fn journalctl_logs(service: Option<&str>, lines: usize) -> AdminResult<String> {
+    let mut cmd = Command::new("journalctl");
+    cmd.args(["-n", &lines.to_string(), "--no-pager"]);
+    if let Some(svc) = service {
+        cmd.args(["-u", svc]);
+    }
+    let out = cmd.output()?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
