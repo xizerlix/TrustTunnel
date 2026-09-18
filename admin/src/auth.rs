@@ -214,22 +214,14 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let app_state = crate::state::AppState::from_ref(state);
-        let htmx = parts.headers.get("hx-request").is_some();
-        let token = extract_session_cookie(&parts.headers).ok_or_else(|| {
-            if htmx {
-                AdminError::AuthHtmx
-            } else {
-                AdminError::Auth("no session".into())
-            }
-        })?;
+        let token = extract_session_cookie(&parts.headers)
+            .ok_or_else(|| AdminError::Auth("no session".into()))?;
         let ttl = Duration::from_secs(app_state.config.session_ttl_secs);
-        let session = app_state.sessions.touch(&token, ttl).await.ok_or_else(|| {
-            if htmx {
-                AdminError::AuthHtmx
-            } else {
-                AdminError::Auth("no session".into())
-            }
-        })?;
+        let session = app_state
+            .sessions
+            .touch(&token, ttl)
+            .await
+            .ok_or_else(|| AdminError::Auth("no session".into()))?;
         Ok(Authenticated(session))
     }
 }

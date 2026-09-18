@@ -1,4 +1,4 @@
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 
 #[derive(Debug)]
@@ -9,7 +9,6 @@ pub enum AdminError {
     TomlEdit(String),
     Apply(String),
     Auth(String),
-    AuthHtmx,
     Validation(String),
     NotFound(String),
     Internal(anyhow::Error),
@@ -24,7 +23,6 @@ impl std::fmt::Display for AdminError {
             AdminError::TomlEdit(e) => write!(f, "toml_edit: {e}"),
             AdminError::Apply(e) => write!(f, "apply: {e}"),
             AdminError::Auth(e) => write!(f, "auth: {e}"),
-            AdminError::AuthHtmx => write!(f, "auth: no session"),
             AdminError::Validation(e) => write!(f, "validation: {e}"),
             AdminError::NotFound(e) => write!(f, "not found: {e}"),
             AdminError::Internal(e) => write!(f, "internal: {e}"),
@@ -84,31 +82,10 @@ fn html_page(title: &str, body: &str) -> String {
     )
 }
 
-fn login_redirect_html() -> String {
-    html_page(
-        "Sign in required",
-        "Your session is missing or expired. Continue to the sign-in page.",
-    )
-}
-
 impl IntoResponse for AdminError {
     fn into_response(self) -> Response {
         match self {
             AdminError::Auth(_) => Redirect::to("/login").into_response(),
-            AdminError::AuthHtmx => {
-                let mut resp = (
-                    StatusCode::UNAUTHORIZED,
-                    Html(login_redirect_html()),
-                )
-                    .into_response();
-                resp.headers_mut().insert(
-                    header::HeaderName::from_static("hx-redirect"),
-                    HeaderValue::from_static("/login"),
-                );
-                resp.headers_mut()
-                    .insert(header::LOCATION, HeaderValue::from_static("/login"));
-                resp
-            }
             other => {
                 let (status, msg) = match &other {
                     AdminError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
@@ -121,7 +98,7 @@ impl IntoResponse for AdminError {
                     AdminError::Internal(_) => {
                         (StatusCode::INTERNAL_SERVER_ERROR, other.to_string())
                     }
-                    AdminError::Auth(_) | AdminError::AuthHtmx => unreachable!(),
+                    AdminError::Auth(_) => unreachable!(),
                 };
                 (
                     status,
@@ -147,25 +124,6 @@ mod tests {
         assert_eq!(
             resp.headers().get(header::LOCATION).unwrap(),
             "/login"
-        );
-    }
-
-    #[test]
-    fn unauthenticated_htmx_sets_hx_redirect() {
-        let resp = AdminError::AuthHtmx.into_response();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(
-            resp.headers()
-                .get(header::HeaderName::from_static("hx-redirect"))
-                .unwrap(),
-            "/login"
-        );
-        assert_ne!(
-            resp.headers()
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or(""),
-            "application/json"
         );
     }
 

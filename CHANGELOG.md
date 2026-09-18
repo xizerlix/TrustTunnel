@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin console styles are served from `/static/admin.css` instead of
+  `cdn.tailwindcss.com` / `unpkg.com` (htmx was unused). Saving VPN settings
+  no longer stalls on those CDNs.
 - [Feature] Admin console: EN/RU language toggle (cookie), live dashboard
   with service up/down time, per-IP connection age and mobile/home icons,
   host/certificate card (refreshed slowly), GiB quotas, deeplink copy,

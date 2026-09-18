@@ -15,6 +15,8 @@ use crate::auth::{LoginLimiter, SessionStore};
 use crate::config::AdminConfig;
 use crate::paths::TrustTunnelPaths;
 use crate::state::AppState;
+use axum::http::{header, HeaderValue};
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 use clap::Parser;
@@ -171,13 +173,14 @@ fn build_router(state: AppState) -> Router {
             get(handlers::settings::settings_form).post(handlers::settings::settings_password),
         )
         .route("/csrf", get(handlers::login::csrf_token))
+        .route("/static/admin.css", get(admin_css))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::HeaderName::from_static("x-content-type-options"),
-            axum::http::HeaderValue::from_static("nosniff"),
+            header::HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
-            axum::http::header::HeaderName::from_static("referrer-policy"),
-            axum::http::HeaderValue::from_static("no-referrer"),
+            header::HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("no-referrer"),
         ))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
@@ -186,6 +189,24 @@ fn build_router(state: AppState) -> Router {
 
 async fn health_check() -> &'static str {
     "ok\n"
+}
+
+const ADMIN_CSS: &str = include_str!("../static/admin.css");
+
+async fn admin_css() -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/css; charset=utf-8"),
+            ),
+            (
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=86400"),
+            ),
+        ],
+        ADMIN_CSS,
+    )
 }
 
 fn init_admin(admin_toml: PathBuf, bind: SocketAddr, password: Option<String>) -> anyhow::Result<()> {
@@ -219,4 +240,44 @@ fn init_admin(admin_toml: PathBuf, bind: SocketAddr, password: Option<String>) -
     }
     println!("admin.toml written to {} (mode 0600)", admin_toml.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ADMIN_CSS;
+
+    #[test]
+    fn admin_css_covers_layout_utilities() {
+        assert!(ADMIN_CSS.contains(".bg-indigo-600"));
+        assert!(ADMIN_CSS.contains("#nav-drawer"));
+        assert!(!ADMIN_CSS.contains("unpkg"));
+        assert!(!ADMIN_CSS.contains("cdn.tailwindcss.com"));
+    }
+
+    #[test]
+    fn templates_do_not_load_third_party_cdns() {
+        for html in [
+            include_str!("../templates/base.html"),
+            include_str!("../templates/login.html"),
+            include_str!("../templates/dashboard.html"),
+            include_str!("../templates/dashboard_data.html"),
+            include_str!("../templates/hosts.html"),
+            include_str!("../templates/logs.html"),
+            include_str!("../templates/rules.html"),
+            include_str!("../templates/settings.html"),
+            include_str!("../templates/users.html"),
+            include_str!("../templates/vpn.html"),
+        ] {
+            assert!(!html.contains("cdn.tailwindcss.com"));
+            assert!(!html.contains("unpkg.com"));
+            assert!(!html.contains("htmx"));
+            assert!(!html.contains("jsdelivr"));
+        }
+        for html in [
+            include_str!("../templates/base.html"),
+            include_str!("../templates/login.html"),
+        ] {
+            assert!(html.contains("/static/admin.css"));
+        }
+    }
 }

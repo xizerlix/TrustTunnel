@@ -38,6 +38,7 @@ vpn-libs-endpoint/
 │   └── src/main.rs            # CLI entrypoint for the VPN endpoint
 ├── admin/                     # Binary crate (`trusttunnel_admin`) web console
 │   ├── src/                   # Auth, TOML editors, dashboard
+│   ├── static/                # Bundled CSS (`admin.css`, no third-party CDNs)
 │   └── templates/             # Askama HTML templates
 ├── tools/                     # Binary crate (`setup_wizard`)
 │   └── setup_wizard/          # Interactive config generator with ACME support
@@ -222,6 +223,10 @@ protocol/deep-link format, library API) when relevant.
    Telegram using the same `TOKEN` / `MY_CHAT_ID` as `/root/bot_listener.sh`
    (or `TT_TELEGRAM_BOT_TOKEN` / `TT_TELEGRAM_CHAT_ID` / `TT_TELEGRAM_SCRIPT`).
    Do not put bot tokens in the git repository.
+   Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs
+   (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
+   (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless
+   templates actually use it; interactive pages already use `fetch()`.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each
