@@ -220,7 +220,7 @@ pub(crate) fn normalize_host(raw: &str) -> Option<String> {
     Some(registrable(&host))
 }
 
-const TLS_SNI_MAX: usize = 8192;
+pub(crate) const TLS_SNI_MAX: usize = 8192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TlsSniScan {
