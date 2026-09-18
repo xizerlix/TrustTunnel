@@ -128,6 +128,22 @@
           </div>
           <span class="text-xs text-slate-500">{{ c.quota_used_pct }}%</span>
           {% endif %}
+          {% if !c.removed %}
+          <button type="button"
+                  class="js-lock shrink-0"
+                  data-user="{{ c.username }}"
+                  data-disabled="{% if c.disabled %}true{% else %}false{% endif %}"
+                  title="{% if c.disabled %}{{ t.lock_allow }}{% else %}{{ t.lock_block }}{% endif %}">
+            <svg class="js-lock-open h-4 w-4 {% if c.disabled %}hidden{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="11" width="14" height="10" rx="2"/>
+              <path d="M8 11V7a4 4 0 0 1 8 0"/>
+            </svg>
+            <svg class="js-lock-closed h-4 w-4 {% if !c.disabled %}hidden{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="11" width="14" height="10" rx="2"/>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+            </svg>
+          </button>
+          {% endif %}
         </div>
       </td>
     </tr>

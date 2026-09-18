@@ -231,6 +231,10 @@ protocol/deep-link format, library API) when relevant.
    hostname, TLS ClientHello SNI on IP CONNECTs, or DNS question on UDP/53
    (not per packet or byte), persist at most every 30s, cap domains
    per user, and load on username click rather than the dashboard poll.
+   Dashboard per-user lock MUST write `disabled = true` on the matching
+   `[[client]]` in `credentials.toml` (absent/false = unlocked), then
+   restart the endpoint so live sessions drop. User-page saves MUST keep
+   the existing `disabled` flag.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

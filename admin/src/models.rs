@@ -202,6 +202,8 @@ pub struct ClientEntry {
     pub max_http3_conns: u32,
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub max_traffic_bytes: u64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -270,6 +272,7 @@ fn default_metrics_timeout() -> u64 { 3 }
 
 fn is_zero_u32(v: &u32) -> bool { *v == 0 }
 fn is_zero_u64(v: &u64) -> bool { *v == 0 }
+fn is_false(v: &bool) -> bool { !*v }
 fn is_empty_option_str(v: &Option<String>) -> bool {
     v.as_ref().map(|s| s.is_empty()).unwrap_or(true)
 }

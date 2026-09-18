@@ -240,6 +240,7 @@ password = "secure_password_1"
 [[client]]
 username = "user2"
 password = "secure_password_2"
+# disabled = true   # optional: reject this user (dashboard lock)
 ```
 
 ### Rules File (rules.toml)

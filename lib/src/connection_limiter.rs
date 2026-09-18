@@ -139,6 +139,7 @@ mod tests {
             max_http2_conns: None,
             max_http3_conns: None,
             max_traffic_bytes: None,
+            disabled: false,
         }
     }
 
@@ -154,6 +155,7 @@ mod tests {
             max_http2_conns: h2,
             max_http3_conns: h3,
             max_traffic_bytes: None,
+            disabled: false,
         }
     }
 

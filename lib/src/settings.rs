@@ -1723,6 +1723,7 @@ where
                 .get("max_traffic_bytes")
                 .and_then(Item::as_integer)
                 .and_then(|v| u64::try_from(v).ok());
+            let disabled = x.get("disabled").and_then(Item::as_bool).unwrap_or(false);
 
             Ok(Client {
                 username,
@@ -1730,6 +1731,7 @@ where
                 max_http2_conns,
                 max_http3_conns,
                 max_traffic_bytes,
+                disabled,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

@@ -87,6 +87,7 @@ pub struct UserRow {
     pub quota_limit_h: String,
     pub quota_used_pct: u8,
     pub quota_exceeded: bool,
+    pub disabled: bool,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -713,6 +714,13 @@ async fn collect(state: &AppState) -> Stats {
             quota_exceeded = quota_exceeded || total_bytes > quota_limit;
         }
 
+        let disabled = creds
+            .clients
+            .iter()
+            .find(|c| c.username == username)
+            .map(|c| c.disabled)
+            .unwrap_or(false);
+
         users.push(UserRow {
             username,
             active,
@@ -725,6 +733,7 @@ async fn collect(state: &AppState) -> Stats {
             quota_limit_h,
             quota_used_pct,
             quota_exceeded,
+            disabled,
         });
     }
     users.sort_by(|a, b| {
@@ -927,6 +936,101 @@ pub async fn user_destinations(
             .collect(),
     })
     .into_response()
+}
+
+pub async fn user_lock(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+    Query(q): Query<UserDestQuery>,
+) -> Response {
+    if verify_csrf(&headers, &session).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(OpJson {
+                ok: false,
+                message: "csrf".into(),
+            }),
+        )
+            .into_response();
+    }
+    let username = q.user.trim();
+    if username.is_empty() || username.len() > 128 || username.contains('\0') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OpJson {
+                ok: false,
+                message: "invalid user".into(),
+            }),
+        )
+            .into_response();
+    }
+    let path = state.paths.credentials_toml.clone();
+    let user = username.to_string();
+    let toggled = tokio::task::spawn_blocking(move || {
+        let text = std::fs::read_to_string(&path)?;
+        let (out, disabled) = toggle_client_disabled(&text, &user)
+            .map_err(crate::error::AdminError::Apply)?;
+        crate::apply::atomic_write(&path, &out)?;
+        Ok::<bool, crate::error::AdminError>(disabled)
+    })
+    .await
+    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    let disabled = match toggled {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OpJson {
+                    ok: false,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+    let name = state.paths.service_name.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        systemctl_restart(&name)?;
+        wait_active(&name, Duration::from_secs(15))
+    })
+    .await
+    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    match result {
+        Ok(()) => Json(LockJson {
+            ok: true,
+            disabled,
+            message: String::new(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OpJson {
+                ok: false,
+                message: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Serialize)]
+struct LockJson {
+    ok: bool,
+    disabled: bool,
+    message: String,
+}
+
+fn toggle_client_disabled(toml_text: &str, username: &str) -> Result<(String, bool), String> {
+    let mut creds: CredentialsToml =
+        toml::from_str(toml_text).map_err(|e| e.to_string())?;
+    let Some(client) = creds.clients.iter_mut().find(|c| c.username == username) else {
+        return Err(format!("user {username} not found"));
+    };
+    client.disabled = !client.disabled;
+    let disabled = client.disabled;
+    let out = toml::to_string_pretty(&creds).map_err(|e| e.to_string())?;
+    Ok((out, disabled))
 }
 
 pub async fn ip_lookup(
@@ -1235,6 +1339,32 @@ inbound_traffic_bytes_per_user{username="alice"} 1024.0
         assert_eq!(parse_session_total_from_prometheus(text), 3);
         assert_eq!(parse_sessions_from_prometheus(text).get("alice"), Some(&2));
         assert_eq!(parse_user_traffic_from_prometheus(text).get("alice"), Some(&(1024, 0)));
+    }
+
+    #[test]
+    fn toggle_client_disabled_locks_then_unlocks() {
+        let toml = r#"
+[[client]]
+username = "alice"
+password = "secret"
+max_traffic_bytes = 100
+"#;
+        let (locked, disabled) = toggle_client_disabled(toml, "alice").unwrap();
+        assert!(disabled);
+        assert!(locked.contains("disabled = true"));
+        let (unlocked, disabled) = toggle_client_disabled(&locked, "alice").unwrap();
+        assert!(!disabled);
+        assert!(!unlocked.contains("disabled = true"));
+    }
+
+    #[test]
+    fn toggle_client_disabled_missing_user_errors() {
+        let toml = r#"
+[[client]]
+username = "alice"
+password = "secret"
+"#;
+        assert!(toggle_client_disabled(toml, "bob").is_err());
     }
 
     #[test]

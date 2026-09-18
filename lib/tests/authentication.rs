@@ -136,6 +136,7 @@ async fn run_endpoint(
                 max_http2_conns: None,
                 max_http3_conns: None,
                 max_traffic_bytes: None,
+                disabled: false,
             },
         )));
     }
@@ -371,6 +372,7 @@ async fn run_endpoint_with_conn_limit(listen_address: &SocketAddr, max_http2_con
             max_http2_conns: Some(max_http2_conns),
             max_http3_conns: None,
             max_traffic_bytes: None,
+            disabled: false,
         }])
         .build()
         .unwrap();

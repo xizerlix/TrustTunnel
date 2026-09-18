@@ -23,6 +23,9 @@ pub struct Client {
     /// Maximum total traffic (inbound + outbound bytes) for this client.
     /// Overrides `default_max_traffic_bytes_per_client` from the main config.
     pub max_traffic_bytes: Option<u64>,
+    /// When true, these credentials are rejected. Default is unlocked.
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 /// The [`Authenticator`] implementation which checks presence of a client in the list.
@@ -37,6 +40,7 @@ impl RegistryBasedAuthenticator {
         Self {
             clients: clients
                 .iter()
+                .filter(|x| !x.disabled)
                 .map(|x| {
                     (
                         BASE64_ENGINE.encode(format!("{}:{}", x.username, x.password)),
@@ -87,6 +91,7 @@ mod tests {
             max_http2_conns: None,
             max_http3_conns: None,
             max_traffic_bytes: None,
+            disabled: false,
         }
     }
 
@@ -123,5 +128,15 @@ mod tests {
         let bad = authentication::Source::ProxyBasic(creds("alice", "wrong").into());
         assert!(auth.authenticate(&ok, &log_id()) == Status::Pass);
         assert!(auth.authenticate(&bad, &log_id()) == Status::Reject);
+    }
+
+    #[test]
+    fn disabled_client_is_rejected() {
+        let mut client = make_client("alice", "secret");
+        client.disabled = true;
+        let auth = RegistryBasedAuthenticator::new(&[client]);
+        let ok = authentication::Source::ProxyBasic(creds("alice", "secret").into());
+        assert!(auth.authenticate(&ok, &log_id()) == Status::Reject);
+        assert_eq!(auth.username(&ok), None);
     }
 }

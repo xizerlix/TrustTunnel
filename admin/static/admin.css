@@ -93,6 +93,7 @@ textarea:focus {
 .min-w-\[44rem\] { min-width: 44rem; }
 .w-full { width: 100%; }
 .w-3\.5 { width: 0.875rem; }
+.w-4 { width: 1rem; }
 .w-6 { width: 1.5rem; }
 .w-24 { width: 6rem; }
 .w-40 { width: 10rem; }
@@ -102,6 +103,7 @@ textarea:focus {
 .max-w-full { max-width: 100%; }
 .h-2 { height: 0.5rem; }
 .h-3\.5 { height: 0.875rem; }
+.h-4 { height: 1rem; }
 .h-6 { height: 1.5rem; }
 .h-44 { height: 11rem; }
 .h-full { height: 100%; }
@@ -225,6 +227,13 @@ textarea:focus {
   background-color: #4f46e5;
   color: #fff;
 }
+.js-lock {
+  padding: 0.15rem;
+  border-radius: 0.25rem;
+  color: #64748b;
+}
+.js-lock:hover { background-color: #f1f5f9; }
+.js-lock[data-disabled="true"] { color: #e11d48; }
 
 #save-overlay {
   display: none;

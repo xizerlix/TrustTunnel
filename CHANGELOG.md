@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin dashboard: lock icon after each user's quota toggles
+  `disabled` in `credentials.toml` (open = access, closed = blocked) and
+  restarts the endpoint so existing sessions drop.
 - [Feature] Admin dashboard: click a username to see top destination sites
   (CONNECT hostnames such as `instagram.com`) as ranked bars for today, week,
   month, or all time. The endpoint counts one increment per new TCP CONNECT

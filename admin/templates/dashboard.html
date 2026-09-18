@@ -41,7 +41,10 @@
      data-dest-title="{{ t.dest_title }}"
      data-dest-loading="{{ t.dest_loading }}"
      data-dest-error="{{ t.dest_error }}"
-     data-dest-empty="{{ t.dest_empty }}"></div>
+     data-dest-empty="{{ t.dest_empty }}"
+     data-lock-allow="{{ t.lock_allow }}"
+     data-lock-block="{{ t.lock_block }}"
+     data-lock-error="{{ t.lock_error }}"></div>
 
 <script>
 (function () {
@@ -111,6 +114,28 @@
       openIp(ip);
       return;
     }
+    var lockBtn = t.closest('.js-lock');
+    if (lockBtn) {
+      var user = lockBtn.getAttribute('data-user') || '';
+      if (!user || lockBtn.disabled) return;
+      lockBtn.disabled = true;
+      fetch('/dashboard/user/lock?user=' + encodeURIComponent(user), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'x-csrf-token': csrf() }
+      }).then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (j) {
+          if (!j || !j.ok) {
+            alert((j && j.message) || i18n.getAttribute('data-lock-error'));
+            return;
+          }
+          setLockState(lockBtn, !!j.disabled);
+          tick();
+        }).catch(function () {
+          alert(i18n.getAttribute('data-lock-error'));
+        }).then(function () { lockBtn.disabled = false; });
+      return;
+    }
     var userBtn = t.closest('.js-user');
     if (userBtn) {
       openDest(userBtn.getAttribute('data-user') || '', destPeriod);
@@ -165,6 +190,17 @@
       .catch(function () {
         modalBody.textContent = i18n.getAttribute('data-geo-error');
       });
+  }
+
+  function setLockState(btn, disabled) {
+    btn.setAttribute('data-disabled', disabled ? 'true' : 'false');
+    btn.setAttribute('title', disabled
+      ? i18n.getAttribute('data-lock-allow')
+      : i18n.getAttribute('data-lock-block'));
+    var openIcon = btn.querySelector('.js-lock-open');
+    var closedIcon = btn.querySelector('.js-lock-closed');
+    if (openIcon) openIcon.classList.toggle('hidden', disabled);
+    if (closedIcon) closedIcon.classList.toggle('hidden', !disabled);
   }
 
   function escapeHtml(s) {

@@ -141,6 +141,10 @@ fn build_router(state: AppState) -> Router {
         .route("/dashboard/ip", get(handlers::dashboard::ip_lookup))
         .route("/dashboard/user", get(handlers::dashboard::user_destinations))
         .route(
+            "/dashboard/user/lock",
+            post(handlers::dashboard::user_lock),
+        )
+        .route(
             "/dashboard/service",
             post(handlers::dashboard::service_restart),
         )

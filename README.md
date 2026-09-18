@@ -496,6 +496,7 @@ Tables `[listen_protocols]`, `[forward_protocol]`, `[reverse_proxy]`,
 | `max_http2_conns` | int | global / unlimited | Override `default_max_http2_conns_per_client` |
 | `max_http3_conns` | int | global / unlimited | Override `default_max_http3_conns_per_client` |
 | `max_traffic_bytes` | int | global / unlimited | Override `default_max_traffic_bytes_per_client` |
+| `disabled` | bool | `false` | If true, credentials are rejected (dashboard lock) |
 
 ### CLI (`trusttunnel_endpoint`)
 

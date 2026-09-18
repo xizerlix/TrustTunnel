@@ -179,6 +179,7 @@ pub async fn users_save(
             max_http2_conns: h2.get(i).cloned().unwrap_or_default().parse().unwrap_or(0),
             max_http3_conns: h3.get(i).cloned().unwrap_or_default().parse().unwrap_or(0),
             max_traffic_bytes: gib_field_to_bytes(gb.get(i).map(|s| s.as_str()).unwrap_or("")),
+            disabled: existing.map(|c| c.disabled).unwrap_or(false),
         });
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
