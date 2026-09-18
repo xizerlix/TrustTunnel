@@ -455,6 +455,11 @@ impl Tunnel {
             }
         };
 
+        let username_opt = username_from_auth(
+            forwarder_auth.as_ref(),
+            context.authenticator.as_ref().map(|a| a.as_ref()),
+        );
+
         let meta = forwarder::TcpConnectionMeta {
             client_address: match request.client_address() {
                 Ok(x) => x,
@@ -487,10 +492,7 @@ impl Tunnel {
                     request_id,
                     "TCP connect: peer connection established"
                 );
-                if let Some(username) = username_from_auth(
-                    forwarder_auth.as_ref(),
-                    context.authenticator.as_ref().map(|a| a.as_ref()),
-                ) {
+                if let Some(username) = username_opt {
                     context
                         .dest_stats
                         .record_destination(&username, &meta.destination);
