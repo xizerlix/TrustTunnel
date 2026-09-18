@@ -870,6 +870,65 @@ struct OpJson {
     message: String,
 }
 
+#[derive(Deserialize)]
+pub struct UserDestQuery {
+    pub user: String,
+    #[serde(default)]
+    pub period: String,
+}
+
+#[derive(Serialize)]
+struct DestRowJson {
+    host: String,
+    count: u64,
+}
+
+#[derive(Serialize)]
+struct DestStatsJson {
+    ok: bool,
+    username: String,
+    period: String,
+    rows: Vec<DestRowJson>,
+}
+
+pub async fn user_destinations(
+    State(state): State<AppState>,
+    Authenticated(_session): Authenticated,
+    Query(q): Query<UserDestQuery>,
+) -> Response {
+    let username = q.user.trim();
+    if username.is_empty() || username.len() > 128 || username.contains('\0') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OpJson {
+                ok: false,
+                message: "invalid user".into(),
+            }),
+        )
+            .into_response();
+    }
+    let period = crate::dest_stats::DestPeriod::parse(&q.period);
+    let vpn_text = std::fs::read_to_string(&state.paths.vpn_toml).ok();
+    let path = crate::dest_stats::resolve_dest_stats_path(&state.paths.root, vpn_text.as_deref());
+    let today = crate::dest_stats::local_day_id();
+    let user = username.to_string();
+    let rows = tokio::task::spawn_blocking(move || {
+        crate::dest_stats::top_for_user(&path, &user, period, today)
+    })
+    .await
+    .unwrap_or_default();
+    Json(DestStatsJson {
+        ok: true,
+        username: username.to_string(),
+        period: period.as_str().into(),
+        rows: rows
+            .into_iter()
+            .map(|(host, count)| DestRowJson { host, count })
+            .collect(),
+    })
+    .into_response()
+}
+
 pub async fn ip_lookup(
     State(state): State<AppState>,
     Authenticated(_session): Authenticated,

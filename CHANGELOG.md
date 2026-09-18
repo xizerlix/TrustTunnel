@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin dashboard: click a username to see top destination sites
+  (CONNECT hostnames such as `instagram.com`) as ranked bars for today, week,
+  month, or all time. The endpoint counts one increment per new TCP CONNECT
+  into `destination_stats_file` (`dest_stats.json` by default), not per packet.
 - [Fix] Admin console styles are served from `/static/admin.css` instead of
   `cdn.tailwindcss.com` / `unpkg.com` (htmx was unused). Saving VPN settings
   no longer stalls on those CDNs.

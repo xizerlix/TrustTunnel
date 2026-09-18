@@ -16,11 +16,32 @@
   </div>
 </div>
 
+<div id="dest-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+      <h2 id="dest-modal-title" class="font-semibold text-sm">{{ t.dest_title }}</h2>
+      <button type="button" id="dest-modal-close" class="text-slate-500 text-sm">{{ t.close }}</button>
+    </div>
+    <div class="flex flex-wrap gap-1 px-4 pt-3" id="dest-periods">
+      <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="today">{{ t.dest_today }}</button>
+      <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.dest_week }}</button>
+      <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="month">{{ t.dest_month }}</button>
+      <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="all">{{ t.dest_all }}</button>
+    </div>
+    <p class="px-4 pt-2 text-xs text-slate-500">{{ t.dest_hint }}</p>
+    <div id="dest-modal-body" class="p-4 text-sm overflow-y-auto max-h-80"></div>
+  </div>
+</div>
+
 <div id="dash-i18n" class="hidden"
      data-reboot-confirm="{{ t.reboot_confirm }}"
      data-geo-loading="{{ t.geo_loading }}"
      data-geo-error="{{ t.geo_error }}"
-     data-geo-private="{{ t.geo_private }}"></div>
+     data-geo-private="{{ t.geo_private }}"
+     data-dest-title="{{ t.dest_title }}"
+     data-dest-loading="{{ t.dest_loading }}"
+     data-dest-error="{{ t.dest_error }}"
+     data-dest-empty="{{ t.dest_empty }}"></div>
 
 <script>
 (function () {
@@ -30,6 +51,11 @@
   var modal = document.getElementById('ip-modal');
   var modalBody = document.getElementById('ip-modal-body');
   var modalTitle = document.getElementById('ip-modal-title');
+  var destModal = document.getElementById('dest-modal');
+  var destBody = document.getElementById('dest-modal-body');
+  var destTitle = document.getElementById('dest-modal-title');
+  var destUser = '';
+  var destPeriod = 'today';
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
@@ -83,10 +109,21 @@
     if (ipBtn) {
       var ip = ipBtn.getAttribute('data-ip') || '';
       openIp(ip);
+      return;
+    }
+    var userBtn = t.closest('.js-user');
+    if (userBtn) {
+      openDest(userBtn.getAttribute('data-user') || '', destPeriod);
+      return;
+    }
+    var periodBtn = t.closest('.js-dest-period');
+    if (periodBtn && destUser) {
+      openDest(destUser, periodBtn.getAttribute('data-period') || 'today');
     }
   });
 
   function openIp(ip) {
+    destModal.classList.add('hidden');
     modal.classList.remove('hidden');
     modalTitle.textContent = ip;
     modalBody.textContent = i18n.getAttribute('data-geo-loading');
@@ -130,11 +167,79 @@
       });
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+
+  function markPeriod(period) {
+    var buttons = document.querySelectorAll('.js-dest-period');
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].getAttribute('data-period') === period) {
+        buttons[i].classList.add('is-on');
+      } else {
+        buttons[i].classList.remove('is-on');
+      }
+    }
+  }
+
+  function openDest(user, period) {
+    destUser = user;
+    destPeriod = period || 'today';
+    modal.classList.add('hidden');
+    destModal.classList.remove('hidden');
+    destTitle.textContent = user || i18n.getAttribute('data-dest-title');
+    destBody.textContent = i18n.getAttribute('data-dest-loading');
+    markPeriod(destPeriod);
+    fetch('/dashboard/user?user=' + encodeURIComponent(user) + '&period=' + encodeURIComponent(destPeriod), {
+      credentials: 'same-origin'
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok === false) {
+          destBody.textContent = i18n.getAttribute('data-dest-error');
+          return;
+        }
+        var rows = d.rows || [];
+        if (!rows.length) {
+          destBody.textContent = i18n.getAttribute('data-dest-empty');
+          return;
+        }
+        var max = 1;
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].count > max) max = rows[i].count;
+        }
+        var html = '';
+        for (var j = 0; j < rows.length; j++) {
+          var pct = Math.max(4, Math.round((rows[j].count / max) * 100));
+          html += '<div class="mb-2">';
+          html += '<div class="flex justify-between gap-2 text-xs mb-0.5">';
+          html += '<span class="font-medium break-all">' + escapeHtml(rows[j].host) + '</span>';
+          html += '<span class="text-slate-500 shrink-0">' + rows[j].count + '</span>';
+          html += '</div>';
+          html += '<div class="w-full h-2 bg-slate-200 rounded overflow-hidden">';
+          html += '<div class="h-full bg-indigo-500" style="width:' + pct + '%"></div>';
+          html += '</div></div>';
+        }
+        destBody.innerHTML = html;
+      })
+      .catch(function () {
+        destBody.textContent = i18n.getAttribute('data-dest-error');
+      });
+  }
+
   document.getElementById('ip-modal-close').addEventListener('click', function () {
     modal.classList.add('hidden');
   });
   modal.addEventListener('click', function (e) {
     if (e.target === modal) modal.classList.add('hidden');
+  });
+  document.getElementById('dest-modal-close').addEventListener('click', function () {
+    destModal.classList.add('hidden');
+  });
+  destModal.addEventListener('click', function (e) {
+    if (e.target === destModal) destModal.classList.add('hidden');
   });
 })();
 </script>

@@ -79,7 +79,9 @@
   {% for c in users %}
     <tr class="border-b border-slate-100 {% if c.removed %}opacity-60{% else %}{% if !c.active %}opacity-50{% endif %}{% endif %}">
       <td class="p-2 font-medium">
-        <span {% if c.removed %}class="line-through text-slate-500"{% endif %}>{{ c.username }}</span>
+        <button type="button" class="js-user font-medium text-indigo-600 underline decoration-dotted text-left" data-user="{{ c.username }}">
+          <span {% if c.removed %}class="line-through text-slate-500"{% endif %}>{{ c.username }}</span>
+        </button>
         {% if c.removed %}
           <span class="text-xs text-rose-600 ml-1">({{ t.removed }})</span>
         {% else %}

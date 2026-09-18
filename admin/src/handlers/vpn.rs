@@ -113,6 +113,7 @@ pub struct VpnForm {
     pub default_max_http3_conns_per_client: Option<String>,
     pub default_max_traffic_bytes_per_client: Option<String>,
     pub traffic_usage_file: Option<String>,
+    pub destination_stats_file: Option<String>,
 }
 
 fn parse_u64(s: Option<String>) -> u64 {
@@ -168,6 +169,7 @@ pub fn apply_form(vpn: &mut VpnToml, form: &VpnForm) -> AdminResult<()> {
     vpn.default_max_http3_conns_per_client = parse_u32(form.default_max_http3_conns_per_client.clone());
     vpn.default_max_traffic_bytes_per_client = parse_u64(form.default_max_traffic_bytes_per_client.clone());
     vpn.traffic_usage_file = parse_optional_string(form.traffic_usage_file.clone());
+    vpn.destination_stats_file = parse_optional_string(form.destination_stats_file.clone());
     Ok(())
 }
 

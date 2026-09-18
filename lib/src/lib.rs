@@ -18,6 +18,7 @@ pub mod utils;
 mod accept_limiter;
 mod connection_limiter;
 mod datagram_pipe;
+mod dest_stats;
 mod direct_forwarder;
 mod downstream;
 mod forwarder;

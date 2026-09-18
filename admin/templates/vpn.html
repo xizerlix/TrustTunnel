@@ -111,6 +111,11 @@
         <input type="text" name="traffic_usage_file" value="{{ vpn.traffic_usage_file.as_deref().unwrap_or("") }}">
         <p class="text-xs text-slate-500 mt-1">{{ t.h_usage }}</p>
       </label>
+      <label class="block">
+        <span class="block text-sm font-medium mb-1">destination_stats_file</span>
+        <input type="text" name="destination_stats_file" value="{{ vpn.destination_stats_file.as_deref().unwrap_or("") }}">
+        <p class="text-xs text-slate-500 mt-1">{{ t.h_dest_stats }}</p>
+      </label>
     </div>
   </fieldset>
 

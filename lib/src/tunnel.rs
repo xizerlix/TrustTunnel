@@ -34,6 +34,21 @@ fn decode_username(creds: &str) -> Option<String> {
         .and_then(|s| s.split(':').next().map(|x| x.to_string()))
 }
 
+fn username_from_auth(
+    source: Option<&authentication::Source<'_>>,
+    authenticator: Option<&dyn authentication::Authenticator>,
+) -> Option<String> {
+    let source = source?;
+    if let Some(name) = authenticator.and_then(|a| a.username(source)) {
+        return Some(name);
+    }
+    let creds = match source {
+        authentication::Source::ProxyBasic(s) => s.as_ref(),
+        authentication::Source::Sni(s) => s.as_ref(),
+    };
+    decode_username(creds)
+}
+
 #[derive(Clone)]
 pub(crate) enum AuthenticationPolicy<'this> {
     /// Perform the regular authentication procedure through the configured authenticator
@@ -472,6 +487,14 @@ impl Tunnel {
                     request_id,
                     "TCP connect: peer connection established"
                 );
+                if let Some(username) = username_from_auth(
+                    forwarder_auth.as_ref(),
+                    context.authenticator.as_ref().map(|a| a.as_ref()),
+                ) {
+                    context
+                        .dest_stats
+                        .record_destination(&username, &meta.destination);
+                }
                 x
             }
             Err(e) => return Err((Some(request), "Connection to peer failed", e)),

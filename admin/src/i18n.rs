@@ -142,6 +142,16 @@ pub struct I18n {
     pub geo_loading: &'static str,
     pub geo_error: &'static str,
     pub close: &'static str,
+    pub dest_title: &'static str,
+    pub dest_today: &'static str,
+    pub dest_week: &'static str,
+    pub dest_month: &'static str,
+    pub dest_all: &'static str,
+    pub dest_empty: &'static str,
+    pub dest_loading: &'static str,
+    pub dest_error: &'static str,
+    pub dest_hint: &'static str,
+    pub h_dest_stats: &'static str,
 }
 
 pub const EN: I18n = I18n {
@@ -270,6 +280,16 @@ pub const EN: I18n = I18n {
     geo_loading: "Looking up…",
     geo_error: "Could not look up this address.",
     close: "Close",
+    dest_title: "Top destinations",
+    dest_today: "Today",
+    dest_week: "Week",
+    dest_month: "Month",
+    dest_all: "All time",
+    dest_empty: "No site names yet. Counts HTTP CONNECT hostnames (instagram.com), not raw IPs.",
+    dest_loading: "Loading…",
+    dest_error: "Could not load destination stats.",
+    dest_hint: "By number of TCP connections. Hostnames from CONNECT, grouped to the site.",
+    h_dest_stats: "JSON file with per-user site visit counters for the dashboard. Empty uses dest_stats.json in the VPN working directory. Cheap: one increment per new TCP CONNECT, not per packet.",
 };
 
 pub const RU: I18n = I18n {
@@ -398,6 +418,16 @@ pub const RU: I18n = I18n {
     geo_loading: "Загрузка…",
     geo_error: "Не удалось получить данные по адресу.",
     close: "Закрыть",
+    dest_title: "Популярные сайты",
+    dest_today: "За сегодня",
+    dest_week: "За неделю",
+    dest_month: "За месяц",
+    dest_all: "За всё время",
+    dest_empty: "Пока нет имён сайтов. Считаются хосты из HTTP CONNECT (instagram.com), не сырые IP.",
+    dest_loading: "Загрузка…",
+    dest_error: "Не удалось загрузить статистику сайтов.",
+    dest_hint: "По числу TCP-подключений. Хосты из CONNECT, свёрнутые до сайта.",
+    h_dest_stats: "JSON со счётчиками посещений сайтов по пользователям. Пусто — dest_stats.json в каталоге VPN. Дёшево: +1 на новый TCP CONNECT, не на каждый пакет.",
 };
 
 pub const LANG_COOKIE: &str = "tt_admin_lang";

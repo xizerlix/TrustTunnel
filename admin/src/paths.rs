@@ -82,6 +82,14 @@ pub fn parse_traffic_usage_file(vpn_toml: &str) -> Option<String> {
         .map(String::from)
 }
 
+pub fn parse_destination_stats_file(vpn_toml: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = vpn_toml.parse().ok()?;
+    doc.get("destination_stats_file")
+        .and_then(|a| a.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +106,16 @@ mod tests {
         assert_eq!(
             parse_traffic_usage_file(toml).as_deref(),
             Some("traffic_usage.toml")
+        );
+    }
+
+    #[test]
+    fn parses_destination_stats_file() {
+        let toml =
+            "listen_address = \"0.0.0.0:443\"\ndestination_stats_file = \"dest_stats.json\"\n";
+        assert_eq!(
+            parse_destination_stats_file(toml).as_deref(),
+            Some("dest_stats.json")
         );
     }
 }

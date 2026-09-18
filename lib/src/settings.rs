@@ -259,6 +259,11 @@ pub struct Settings {
     #[serde(default)]
     pub(crate) traffic_usage_file: Option<String>,
 
+    /// Path to a JSON file with per-user destination visit counters for the admin dashboard.
+    /// If absent, the endpoint writes `dest_stats.json` in the process working directory.
+    #[serde(default)]
+    pub(crate) destination_stats_file: Option<String>,
+
     /// Whether an instance was built through a [`SettingsBuilder`].
     /// This flag is a workaround for absence of the ability to validate
     /// the deserialized structure.
@@ -737,6 +742,7 @@ impl Default for Settings {
             default_max_http3_conns_per_client: None,
             default_max_traffic_bytes_per_client: None,
             traffic_usage_file: None,
+            destination_stats_file: None,
             auth_failure_status_code: Settings::default_auth_failure_status_code(),
             non_connect_auth_failure_status_code: None,
             built: false,
@@ -1008,6 +1014,7 @@ impl SettingsBuilder {
                 default_max_http3_conns_per_client: None,
                 default_max_traffic_bytes_per_client: None,
                 traffic_usage_file: None,
+                destination_stats_file: None,
                 auth_failure_status_code: Settings::default_auth_failure_status_code(),
                 non_connect_auth_failure_status_code: None,
                 built: true,
@@ -1162,6 +1169,11 @@ impl SettingsBuilder {
 
     pub fn traffic_usage_file<S: Into<String>>(mut self, x: Option<S>) -> Self {
         self.settings.traffic_usage_file = x.map(Into::into);
+        self
+    }
+
+    pub fn destination_stats_file<S: Into<String>>(mut self, x: Option<S>) -> Self {
+        self.settings.destination_stats_file = x.map(Into::into);
         self
     }
 

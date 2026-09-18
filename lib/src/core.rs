@@ -16,6 +16,7 @@ use crate::shutdown::Shutdown;
 use crate::socks5_forwarder::Socks5Forwarder;
 use crate::tls_demultiplexer::TlsDemux;
 use crate::tls_listener::{TlsAcceptor, TlsListener};
+use crate::dest_stats::DestinationStats;
 use crate::traffic_limiter::TrafficLimiter;
 use crate::tunnel::Tunnel;
 use crate::{
@@ -87,6 +88,7 @@ pub(crate) struct Context {
     next_tunnel_id: Arc<AtomicU64>,
     pub connection_limiter: Option<Arc<ConnectionLimiter>>,
     pub traffic_limiter: Option<Arc<TrafficLimiter>>,
+    pub dest_stats: Arc<DestinationStats>,
 }
 
 impl Context {
@@ -160,6 +162,14 @@ impl Core {
             .map(|m| m.per_client_metrics)
             .unwrap_or(false);
 
+        let dest_stats_path = settings
+            .destination_stats_file
+            .as_ref()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .unwrap_or_else(|| "dest_stats.json".into());
+        let dest_stats = DestinationStats::new(Some(PathBuf::from(dest_stats_path)));
+
         Ok(Self {
             context: Arc::new(Context {
                 settings: settings.clone(),
@@ -181,6 +191,7 @@ impl Core {
                 next_tunnel_id: Default::default(),
                 connection_limiter,
                 traffic_limiter,
+                dest_stats,
             }),
         })
     }
@@ -882,6 +893,7 @@ impl Default for Context {
             next_tunnel_id: Default::default(),
             connection_limiter: None,
             traffic_limiter: None,
+            dest_stats: DestinationStats::new(None),
         }
     }
 }

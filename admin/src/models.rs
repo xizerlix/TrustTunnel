@@ -47,6 +47,8 @@ pub struct VpnToml {
     pub default_max_traffic_bytes_per_client: u64,
     #[serde(default, skip_serializing_if = "is_empty_option_str")]
     pub traffic_usage_file: Option<String>,
+    #[serde(default, skip_serializing_if = "is_empty_option_str")]
+    pub destination_stats_file: Option<String>,
     #[serde(default)]
     pub forward_protocol: Option<ForwardProtocolToml>,
     #[serde(default)]

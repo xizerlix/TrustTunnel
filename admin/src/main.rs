@@ -1,6 +1,7 @@
 mod apply;
 mod auth;
 mod config;
+mod dest_stats;
 mod error;
 mod form;
 mod handlers;
@@ -138,6 +139,7 @@ fn build_router(state: AppState) -> Router {
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/dashboard/data", get(handlers::dashboard::dashboard_data))
         .route("/dashboard/ip", get(handlers::dashboard::ip_lookup))
+        .route("/dashboard/user", get(handlers::dashboard::user_destinations))
         .route(
             "/dashboard/service",
             post(handlers::dashboard::service_restart),

@@ -227,6 +227,9 @@ protocol/deep-link format, library API) when relevant.
    (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless
    templates actually use it; interactive pages already use `fetch()`.
+   Destination visit stats MUST increment once per tunneled TCP CONNECT
+   hostname (not per packet or byte), persist at most every 30s, cap domains
+   per user, and load on username click rather than the dashboard poll.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each

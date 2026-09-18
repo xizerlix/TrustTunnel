@@ -9,4 +9,5 @@ vpn.toml
 credentials.toml
 hosts.toml
 rules.toml
+dest_stats.json
 .zcode/
