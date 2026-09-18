@@ -43,13 +43,6 @@ jobs:
           if [ -z "$TARGET" ]; then TARGET="all"; fi
           echo "build=$TARGET" >> "$GITHUB_OUTPUT"
 
-      - name: Strip custom- prefix from version
-        id: ver
-        run: |
-          RAW="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${RAW#custom-}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Install build dependencies
         if: steps.target.outputs.build == 'all'
         run: |
@@ -72,13 +65,13 @@ jobs:
       - name: Build all release binaries
         if: steps.target.outputs.build == 'all'
         env:
-          TRUSTTUNNEL_VERSION: ${{ steps.ver.outputs.version }}
+          TRUSTTUNNEL_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: cargo +1.95 build --bins --release
 
       - name: Build admin only
         if: steps.target.outputs.build == 'admin'
         env:
-          TRUSTTUNNEL_VERSION: ${{ steps.ver.outputs.version }}
+          TRUSTTUNNEL_VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: cargo +1.95 build -p trusttunnel_admin --release --bin trusttunnel_admin
 
       - name: Package
