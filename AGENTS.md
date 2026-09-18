@@ -228,7 +228,8 @@ protocol/deep-link format, library API) when relevant.
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless
    templates actually use it; interactive pages already use `fetch()`.
    Destination visit stats MUST increment once per tunneled TCP CONNECT
-   hostname (not per packet or byte), persist at most every 30s, cap domains
+   hostname, TLS ClientHello SNI on IP CONNECTs, or DNS question on UDP/53
+   (not per packet or byte), persist at most every 30s, cap domains
    per user, and load on username click rather than the dashboard poll.
 
    **Rationale**: consistency with the existing config surface. Several

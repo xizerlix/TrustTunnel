@@ -1,14 +1,18 @@
 use crate::authentication::Status;
 use crate::connection_limiter::ConnectionGuard;
+use crate::dest_stats::{self, DestinationStats};
 use crate::downstream::{
     Downstream, PendingDatagramMultiplexerRequest, PendingDemultiplexedRequest,
     PendingTcpConnectRequest,
 };
 use crate::forwarder::Forwarder;
+use crate::net_utils::TcpDestination;
 use crate::pipe::DuplexPipe;
 use crate::{
-    authentication, core, datagram_pipe, downstream, forwarder, log_id, log_utils, pipe, udp_pipe,
+    authentication, core, datagram_pipe, downstream, forwarder, log_id, log_utils, net_utils, pipe,
+    udp_pipe,
 };
+use async_trait::async_trait;
 use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
 use std::fmt::{Display, Formatter};
@@ -492,10 +496,10 @@ impl Tunnel {
                     request_id,
                     "TCP connect: peer connection established"
                 );
-                if let Some(username) = username_opt {
+                if let Some(username) = username_opt.as_ref() {
                     context
                         .dest_stats
-                        .record_destination(&username, &meta.destination);
+                        .record_destination(username, &meta.destination);
                 }
                 x
             }
@@ -518,6 +522,17 @@ impl Tunnel {
                 x
             }
             Err(e) => return Err((None, "Failed to complete request", ConnectionError::Io(e))),
+        };
+
+        let dstr_rx = match username_opt {
+            Some(username) if !matches!(meta.destination, TcpDestination::HostName(_)) => {
+                Box::new(SniPeekSource::new(
+                    dstr_rx,
+                    context.dest_stats.clone(),
+                    username,
+                )) as Box<dyn pipe::Source>
+            }
+            _ => dstr_rx,
         };
 
         let mut pipe = DuplexPipe::new(
@@ -585,6 +600,11 @@ impl Tunnel {
             }
         }
 
+        let dns_username = username_from_auth(
+            forwarder_auth.as_ref(),
+            context.authenticator.as_ref().map(|a| a.as_ref()),
+        );
+
         let mut pipe: Box<dyn datagram_pipe::DuplexPipe> = match request.promote_to_next_state() {
             Ok(downstream::DatagramPipeHalves::Udp(dstr_source, dstr_sink)) => {
                 let meta = forwarder::UdpMultiplexerMeta {
@@ -604,6 +624,16 @@ impl Tunnel {
                             ConnectionError::Io(e),
                         ))
                     }
+                };
+
+                let dstr_source = match dns_username {
+                    Some(username) => Box::new(DnsPeekSource::new(
+                        dstr_source,
+                        context.dest_stats.clone(),
+                        username,
+                    ))
+                        as Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
+                    None => dstr_source,
                 };
 
                 Box::new(udp_pipe::DuplexPipe::new(
@@ -660,5 +690,112 @@ impl Tunnel {
                 ConnectionError::Io(e),
             )),
         }
+    }
+}
+
+struct SniPeekSource {
+    inner: Box<dyn pipe::Source>,
+    dest_stats: Arc<DestinationStats>,
+    username: String,
+    buf: Vec<u8>,
+    done: bool,
+}
+
+impl SniPeekSource {
+    fn new(
+        inner: Box<dyn pipe::Source>,
+        dest_stats: Arc<DestinationStats>,
+        username: String,
+    ) -> Self {
+        Self {
+            inner,
+            dest_stats,
+            username,
+            buf: Vec::new(),
+            done: false,
+        }
+    }
+
+    fn observe(&mut self, chunk: &[u8]) {
+        if self.done {
+            return;
+        }
+        let room = dest_stats::TLS_SNI_MAX.saturating_sub(self.buf.len());
+        if room == 0 {
+            self.done = true;
+            self.buf.clear();
+            return;
+        }
+        self.buf.extend_from_slice(&chunk[..chunk.len().min(room)]);
+        match dest_stats::scan_tls_sni(&self.buf) {
+            (dest_stats::TlsSniScan::Found, Some(host)) => {
+                self.dest_stats.record_host(&self.username, &host);
+                self.done = true;
+                self.buf.clear();
+            }
+            (dest_stats::TlsSniScan::NeedMore, _) => {}
+            _ => {
+                self.done = true;
+                self.buf.clear();
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl pipe::Source for SniPeekSource {
+    fn id(&self) -> log_utils::IdChain<u64> {
+        self.inner.id()
+    }
+
+    async fn read(&mut self) -> io::Result<pipe::Data> {
+        let data = self.inner.read().await?;
+        if let pipe::Data::Chunk(ref bytes) = data {
+            self.observe(bytes);
+        }
+        Ok(data)
+    }
+
+    fn consume(&mut self, size: usize) -> io::Result<()> {
+        self.inner.consume(size)
+    }
+}
+
+struct DnsPeekSource {
+    inner: Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
+    dest_stats: Arc<DestinationStats>,
+    username: String,
+}
+
+impl DnsPeekSource {
+    fn new(
+        inner: Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
+        dest_stats: Arc<DestinationStats>,
+        username: String,
+    ) -> Self {
+        Self {
+            inner,
+            dest_stats,
+            username,
+        }
+    }
+}
+
+#[async_trait]
+impl datagram_pipe::Source for DnsPeekSource {
+    type Output = downstream::UdpDatagram;
+
+    fn id(&self) -> log_utils::IdChain<u64> {
+        self.inner.id()
+    }
+
+    async fn read(&mut self) -> io::Result<Self::Output> {
+        let datagram = self.inner.read().await?;
+        if datagram.meta.destination.port() == net_utils::PLAIN_DNS_PORT_NUMBER {
+            for name in dest_stats::dns_question_names(&datagram.payload) {
+                self.dest_stats.record_host(&self.username, &name);
+            }
+        }
+        Ok(datagram)
     }
 }
