@@ -208,7 +208,7 @@ async fn admin_css() -> impl IntoResponse {
             ),
             (
                 header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=86400"),
+                HeaderValue::from_static("no-cache"),
             ),
         ],
         ADMIN_CSS,
@@ -285,5 +285,8 @@ mod tests {
         ] {
             assert!(html.contains("/static/admin.css"));
         }
+        let dash = include_str!("../templates/dashboard_data.html");
+        assert!(dash.contains("js-lock"));
+        assert!(dash.contains("width=\"22\""));
     }
 }

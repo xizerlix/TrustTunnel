@@ -130,7 +130,6 @@
             return;
           }
           setLockState(lockBtn, !!j.disabled);
-          tick();
         }).catch(function () {
           alert(i18n.getAttribute('data-lock-error'));
         }).then(function () { lockBtn.disabled = false; });
@@ -193,14 +192,17 @@
   }
 
   function setLockState(btn, disabled) {
-    btn.setAttribute('data-disabled', disabled ? 'true' : 'false');
-    btn.setAttribute('title', disabled
+    var label = disabled
       ? i18n.getAttribute('data-lock-allow')
-      : i18n.getAttribute('data-lock-block'));
+      : i18n.getAttribute('data-lock-block');
+    btn.setAttribute('data-disabled', disabled ? 'true' : 'false');
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-label', label);
+    btn.style.color = disabled ? '#e11d48' : '#4f46e5';
     var openIcon = btn.querySelector('.js-lock-open');
     var closedIcon = btn.querySelector('.js-lock-closed');
-    if (openIcon) openIcon.classList.toggle('hidden', disabled);
-    if (closedIcon) closedIcon.classList.toggle('hidden', !disabled);
+    if (openIcon) openIcon.style.display = disabled ? 'none' : 'block';
+    if (closedIcon) closedIcon.style.display = disabled ? 'block' : 'none';
   }
 
   function escapeHtml(s) {

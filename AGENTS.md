@@ -227,6 +227,11 @@ protocol/deep-link format, library API) when relevant.
    (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless
    templates actually use it; interactive pages already use `fetch()`.
+   Admin CSS MUST be served with `Cache-Control: no-cache` (the file is
+   baked into the binary; a 24h cache hid dashboard UI after binary-only
+   upgrades). Dashboard lock icons MUST set SVG `width`/`height` (and
+   inline display), not rely on utility classes, so they stay 22px when
+   CSS is stale.
    Destination visit stats MUST increment once per tunneled TCP CONNECT
    hostname, TLS ClientHello SNI on IP CONNECTs, or DNS question on UDP/53
    (not per packet or byte), persist at most every 30s, cap domains

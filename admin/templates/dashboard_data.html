@@ -73,6 +73,7 @@
       <th class="p-2">{{ t.ips }}</th>
       <th class="p-2">{{ t.traffic_used }}</th>
       <th class="p-2">{{ t.quota }}</th>
+      <th class="p-2">{{ t.access }}</th>
     </tr>
   </thead>
   <tbody>
@@ -128,23 +129,29 @@
           </div>
           <span class="text-xs text-slate-500">{{ c.quota_used_pct }}%</span>
           {% endif %}
-          {% if !c.removed %}
-          <button type="button"
-                  class="js-lock shrink-0"
-                  data-user="{{ c.username }}"
-                  data-disabled="{% if c.disabled %}true{% else %}false{% endif %}"
-                  title="{% if c.disabled %}{{ t.lock_allow }}{% else %}{{ t.lock_block }}{% endif %}">
-            <svg class="js-lock-open h-4 w-4 {% if c.disabled %}hidden{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="5" y="11" width="14" height="10" rx="2"/>
-              <path d="M8 11V7a4 4 0 0 1 8 0"/>
-            </svg>
-            <svg class="js-lock-closed h-4 w-4 {% if !c.disabled %}hidden{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="5" y="11" width="14" height="10" rx="2"/>
-              <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-            </svg>
-          </button>
-          {% endif %}
         </div>
+      </td>
+      <td class="p-2">
+        {% if !c.removed %}
+        <button type="button"
+                class="js-lock"
+                data-user="{{ c.username }}"
+                data-disabled="{% if c.disabled %}true{% else %}false{% endif %}"
+                title="{% if c.disabled %}{{ t.lock_allow }}{% else %}{{ t.lock_block }}{% endif %}"
+                aria-label="{% if c.disabled %}{{ t.lock_allow }}{% else %}{{ t.lock_block }}{% endif %}"
+                style="width:28px;height:28px;{% if c.disabled %}color:#e11d48;{% else %}color:#4f46e5;{% endif %}">
+          <svg class="js-lock-open" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"
+               style="{% if c.disabled %}display:none{% else %}display:block{% endif %}">
+            <path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-9h-1V6a5 5 0 0 0-9.54-2.05.75.75 0 0 0 1.37.61A3.5 3.5 0 0 1 15.5 6v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z"/>
+          </svg>
+          <svg class="js-lock-closed" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"
+               style="{% if c.disabled %}display:block{% else %}display:none{% endif %}">
+            <path d="M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 0 1 6 0v2H9V6zm3 11a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+          </svg>
+        </button>
+        {% else %}
+        —
+        {% endif %}
       </td>
     </tr>
   {% endfor %}

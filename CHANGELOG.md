@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin dashboard lock is a dedicated Access column with a fixed-size
+  padlock (not a CSS-sized SVG that became a blank 300px gap when
+  `/static/admin.css` was cached).
 - [Feature] Admin dashboard: lock icon after each user's quota toggles
   `disabled` in `credentials.toml` (open = access, closed = blocked) and
   restarts the endpoint so existing sessions drop.
