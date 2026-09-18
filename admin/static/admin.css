@@ -258,6 +258,50 @@ textarea:focus {
 #nav-drawer { transform: translateX(-100%); }
 #nav-drawer.open { transform: translateX(0); }
 
+.user-ip-line {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+  padding: 0.125rem 0;
+}
+.user-age,
+.user-traf,
+.user-traf-sub {
+  white-space: nowrap;
+}
+.user-age { flex-shrink: 0; }
+
+@media (max-width: 767px) {
+  .user-table-wrap { overflow-x: visible; }
+  .user-table { min-width: 0; }
+  .user-table thead { display: none; }
+  .user-table tbody { display: block; }
+  .user-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "user sess lock"
+      "ip ip ip"
+      "traf traf quota";
+    gap: 0.35rem 0.75rem;
+    align-items: start;
+    padding: 0.75rem 0.85rem;
+  }
+  .user-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .td-user { grid-area: user; }
+  .td-sess { grid-area: sess; align-self: center; }
+  .td-ip { grid-area: ip; }
+  .td-traf { grid-area: traf; }
+  .td-quota { grid-area: quota; justify-self: end; align-self: center; }
+  .td-lock { grid-area: lock; justify-self: end; }
+  .td-quota .w-24 { width: 4.5rem; }
+}
+
 @media (min-width: 640px) {
   .sm\:p-6 { padding: 1.5rem; }
   .sm\:text-3xl { font-size: 1.875rem; line-height: 2.25rem; }

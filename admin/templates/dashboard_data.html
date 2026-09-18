@@ -64,8 +64,8 @@
 {% if users.is_empty() %}
   <div class="text-slate-500">{{ t.no_users }}</div>
 {% else %}
-<div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-x-auto">
-<table class="w-full text-sm min-w-[36rem]">
+<div class="user-table-wrap bg-white rounded-xl shadow-sm border border-slate-100 overflow-x-auto">
+<table class="user-table w-full text-sm min-w-[36rem]">
   <thead class="text-left border-b border-slate-200">
     <tr>
       <th class="p-2">{{ t.username }}</th>
@@ -79,7 +79,7 @@
   <tbody>
   {% for c in users %}
     <tr class="border-b border-slate-100 {% if c.removed %}opacity-60{% else %}{% if !c.active %}opacity-50{% endif %}{% endif %}">
-      <td class="p-2 font-medium">
+      <td class="td-user p-2 font-medium">
         <button type="button" class="js-user font-medium text-indigo-600 underline decoration-dotted text-left" data-user="{{ c.username }}">
           <span {% if c.removed %}class="line-through text-slate-500"{% endif %}>{{ c.username }}</span>
         </button>
@@ -89,13 +89,13 @@
           {% if !c.active %}<span class="text-xs text-slate-400 ml-1">({{ t.offline }})</span>{% endif %}
         {% endif %}
       </td>
-      <td class="p-2">{{ c.sessions }}</td>
-      <td class="p-2 text-xs text-slate-600">
+      <td class="td-sess p-2">{{ c.sessions }}</td>
+      <td class="td-ip p-2 text-xs text-slate-600">
         {% if c.ips.is_empty() %}
           —
         {% else %}
           {% for ip in c.ips %}
-          <div class="flex items-center gap-1 py-0.5">
+          <div class="user-ip-line">
             {% if ip.kind == "mobile" %}
             <svg class="h-3.5 w-3.5 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="currentColor"><title>{{ t.mobile }}</title><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm5 18a1.25 1.25 0 1 0 0-2.5A1.25 1.25 0 0 0 12 20z"/></svg>
             {% else %}
@@ -110,16 +110,16 @@
               {% endif %}
             {% endif %}
             <button type="button" class="js-ip font-mono text-indigo-600 underline decoration-dotted text-left" data-ip="{{ ip.address }}">{{ ip.address }}</button>
-            <span class="text-slate-400">{{ ip.connected_h }}</span>
+            <span class="user-age text-slate-400">{{ ip.connected_h }}</span>
           </div>
           {% endfor %}
         {% endif %}
       </td>
-      <td class="p-2">
-        <div>{{ c.total_h }}</div>
-        <div class="text-xs text-slate-400">↓ {{ c.inbound_h }} · ↑ {{ c.outbound_h }}</div>
+      <td class="td-traf p-2">
+        <div class="user-traf">{{ c.total_h }}</div>
+        <div class="user-traf-sub text-xs text-slate-400">↓ {{ c.inbound_h }} · ↑ {{ c.outbound_h }}</div>
       </td>
-      <td class="p-2">
+      <td class="td-quota p-2">
         <div class="flex items-center gap-2">
           <span class="text-xs">{% if c.quota_limit_h == "∞" %}{{ t.unlimited }}{% else %}{{ c.quota_limit_h }}{% endif %}</span>
           {% if c.quota_limit_h != "∞" %}
@@ -131,7 +131,7 @@
           {% endif %}
         </div>
       </td>
-      <td class="p-2">
+      <td class="td-lock p-2">
         {% if !c.removed %}
         <button type="button"
                 class="js-lock"

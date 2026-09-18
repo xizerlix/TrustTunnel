@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin dashboard user rows stack on phones so IP age and traffic
+  stay on one line instead of wrapping beside empty table space.
 - [Fix] Admin dashboard lock is a dedicated Access column with a fixed-size
   padlock (not a CSS-sized SVG that became a blank 300px gap when
   `/static/admin.css` was cached).

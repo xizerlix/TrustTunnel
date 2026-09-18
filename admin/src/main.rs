@@ -288,5 +288,7 @@ mod tests {
         let dash = include_str!("../templates/dashboard_data.html");
         assert!(dash.contains("js-lock"));
         assert!(dash.contains("width=\"22\""));
+        assert!(dash.contains("user-table"));
+        assert!(dash.contains("user-ip-line"));
     }
 }

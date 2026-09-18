@@ -240,6 +240,9 @@ protocol/deep-link format, library API) when relevant.
    `[[client]]` in `credentials.toml` (absent/false = unlocked), then
    restart the endpoint so live sessions drop. User-page saves MUST keep
    the existing `disabled` flag.
+   Below 768px the dashboard user table MUST stack as a card grid (name /
+   sessions / lock, then IPs, then traffic / quota) with nowrap on IP age
+   and traffic so values do not split while columns sit empty.
 
    **Rationale**: consistency with the existing config surface. Several
    TrustTunnel clients behind one public IP share a source address and each
