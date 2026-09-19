@@ -1,4 +1,4 @@
-use axum::http::{header, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 
 #[derive(Debug)]
@@ -115,7 +115,7 @@ pub type AdminResult<T> = Result<T, AdminError>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
+    use axum::http::{header, StatusCode};
 
     #[test]
     fn unauthenticated_browser_is_sent_to_login() {

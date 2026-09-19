@@ -285,7 +285,7 @@ fn parse_one_client(v: &Value) -> Option<LiveClient> {
     let username = obj.get("username")?.as_str()?.to_string();
     let sessions = json_u64(obj.get("sessions"));
     let mut inbound = json_u64(obj.get("inbound"));
-    let mut outbound = json_u64(obj.get("outbound"));
+    let outbound = json_u64(obj.get("outbound"));
     let total = json_u64(obj.get("total"));
     if inbound == 0 && outbound == 0 && total > 0 {
         inbound = total;
@@ -1100,14 +1100,14 @@ struct NoteBody {
 }
 
 pub(crate) fn parse_tags(raw: &str) -> Vec<String> {
-    let mut out = Vec::new();
+    let mut out: Vec<String> = Vec::new();
     for part in raw.split([',', ';']) {
         let t = part.trim();
         if t.is_empty() {
             continue;
         }
         let t: String = t.chars().take(24).collect();
-        if !out.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+        if !out.iter().any(|x: &String| x.eq_ignore_ascii_case(&t)) {
             out.push(t);
         }
         if out.len() >= 8 {
