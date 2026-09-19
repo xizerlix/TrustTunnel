@@ -88,6 +88,8 @@ pub struct UserRow {
     pub quota_used_pct: u8,
     pub quota_exceeded: bool,
     pub disabled: bool,
+    pub note: String,
+    pub tags: Vec<String>,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -714,12 +716,10 @@ async fn collect(state: &AppState) -> Stats {
             quota_exceeded = quota_exceeded || total_bytes > quota_limit;
         }
 
-        let disabled = creds
-            .clients
-            .iter()
-            .find(|c| c.username == username)
-            .map(|c| c.disabled)
-            .unwrap_or(false);
+        let cred = creds.clients.iter().find(|c| c.username == username);
+        let disabled = cred.map(|c| c.disabled).unwrap_or(false);
+        let note = cred.map(|c| c.note.clone()).unwrap_or_default();
+        let tags = cred.map(|c| c.tags.clone()).unwrap_or_default();
 
         users.push(UserRow {
             username,
@@ -734,6 +734,8 @@ async fn collect(state: &AppState) -> Stats {
             quota_used_pct,
             quota_exceeded,
             disabled,
+            note,
+            tags,
         });
     }
     users.sort_by(|a, b| {
@@ -768,6 +770,14 @@ async fn collect(state: &AppState) -> Stats {
         .and_then(|h| h.main_hosts.first().map(|x| x.cert_chain_path.clone()));
     let (host, cert) = state.slow.host_and_cert(cert_path.as_deref());
     let (cert_subject, cert_expiry) = cert.unwrap_or_else(|| (String::new(), String::new()));
+
+    let series_path = crate::traffic_series::series_path(&state.paths.root);
+    crate::traffic_series::record(
+        &series_path,
+        chrono::Local::now().timestamp(),
+        total_in,
+        total_out,
+    );
 
     Stats {
         service_active: svc.active,
@@ -944,6 +954,48 @@ pub async fn user_destinations(
     .into_response()
 }
 
+#[derive(Deserialize, Default)]
+struct TrafQuery {
+    #[serde(default)]
+    period: String,
+}
+
+#[derive(Serialize)]
+struct TrafJson {
+    ok: bool,
+    period: String,
+    points: Vec<crate::traffic_series::ChartPoint>,
+}
+
+pub async fn traffic_series(
+    State(state): State<AppState>,
+    Authenticated(_session): Authenticated,
+    Query(q): Query<TrafQuery>,
+) -> Response {
+    let period = crate::traffic_series::TrafPeriod::parse(&q.period);
+    let path = crate::traffic_series::series_path(&state.paths.root);
+    let now = chrono::Local::now().timestamp();
+    let points = tokio::task::spawn_blocking(move || crate::traffic_series::chart(&path, period, now))
+        .await
+        .unwrap_or_default();
+    Json(TrafJson {
+        ok: true,
+        period: period.as_str().into(),
+        points,
+    })
+    .into_response()
+}
+
+pub(crate) fn usage_file_totals(root: &Path) -> (u64, u64) {
+    let vpn_text = std::fs::read_to_string(root.join("vpn.toml")).ok();
+    let path = resolve_usage_path(root, vpn_text.as_deref());
+    let usage = load_usage_map(&path);
+    (
+        usage.values().map(|u| u.inbound).sum(),
+        usage.values().map(|u| u.outbound).sum(),
+    )
+}
+
 pub async fn user_lock(
     State(state): State<AppState>,
     Authenticated(session): Authenticated,
@@ -1037,6 +1089,118 @@ fn toggle_client_disabled(toml_text: &str, username: &str) -> Result<(String, bo
     let disabled = client.disabled;
     let out = toml::to_string_pretty(&creds).map_err(|e| e.to_string())?;
     Ok((out, disabled))
+}
+
+#[derive(Deserialize, Default)]
+struct NoteBody {
+    #[serde(default)]
+    note: String,
+    #[serde(default)]
+    tags: String,
+}
+
+pub(crate) fn parse_tags(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for part in raw.split([',', ';']) {
+        let t = part.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let t: String = t.chars().take(24).collect();
+        if !out.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+            out.push(t);
+        }
+        if out.len() >= 8 {
+            break;
+        }
+    }
+    out
+}
+
+fn set_client_note(
+    toml_text: &str,
+    username: &str,
+    note: &str,
+    tags: Vec<String>,
+) -> Result<(String, String, Vec<String>), String> {
+    let mut creds: CredentialsToml = toml::from_str(toml_text).map_err(|e| e.to_string())?;
+    let Some(client) = creds.clients.iter_mut().find(|c| c.username == username) else {
+        return Err(format!("user {username} not found"));
+    };
+    let note = note.trim().chars().take(200).collect::<String>();
+    client.note = note.clone();
+    client.tags = tags;
+    let tags = client.tags.clone();
+    let out = toml::to_string_pretty(&creds).map_err(|e| e.to_string())?;
+    Ok((out, note, tags))
+}
+
+pub async fn user_note(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+    Query(q): Query<UserDestQuery>,
+    Json(body): Json<NoteBody>,
+) -> Response {
+    if verify_csrf(&headers, &session).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(OpJson {
+                ok: false,
+                message: "csrf".into(),
+            }),
+        )
+            .into_response();
+    }
+    let username = q.user.trim();
+    if username.is_empty() || username.len() > 128 || username.contains('\0') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OpJson {
+                ok: false,
+                message: "invalid user".into(),
+            }),
+        )
+            .into_response();
+    }
+    let path = state.paths.credentials_toml.clone();
+    let user = username.to_string();
+    let note = body.note;
+    let tags = parse_tags(&body.tags);
+    let saved = tokio::task::spawn_blocking(move || {
+        let text = std::fs::read_to_string(&path)?;
+        let (out, note, tags) = set_client_note(&text, &user, &note, tags)
+            .map_err(crate::error::AdminError::Apply)?;
+        crate::apply::atomic_write(&path, &out)?;
+        Ok::<(String, Vec<String>), crate::error::AdminError>((note, tags))
+    })
+    .await
+    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    match saved {
+        Ok((note, tags)) => Json(NoteJson {
+            ok: true,
+            note,
+            tags,
+            message: String::new(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OpJson {
+                ok: false,
+                message: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Serialize)]
+struct NoteJson {
+    ok: bool,
+    note: String,
+    tags: Vec<String>,
+    message: String,
 }
 
 pub async fn ip_lookup(
@@ -1371,6 +1535,29 @@ username = "alice"
 password = "secret"
 "#;
         assert!(toggle_client_disabled(toml, "bob").is_err());
+    }
+
+    #[test]
+    fn parse_tags_splits_and_caps() {
+        assert_eq!(
+            parse_tags("Family, family, home; work"),
+            vec!["Family".to_string(), "home".into(), "work".into()]
+        );
+    }
+
+    #[test]
+    fn set_client_note_keeps_password() {
+        let toml = r#"
+[[client]]
+username = "alice"
+password = "secret"
+"#;
+        let (out, note, tags) =
+            set_client_note(toml, "alice", " kids ", vec!["home".into()]).unwrap();
+        assert_eq!(note, "kids");
+        assert_eq!(tags, vec!["home"]);
+        assert!(out.contains("password = \"secret\""));
+        assert!(out.contains("note = \"kids\""));
     }
 
     #[test]

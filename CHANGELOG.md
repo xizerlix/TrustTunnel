@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Top domains Last hour no longer equals Today: hour buckets must
+  match the current clock hour (not `saturating_sub` against day ids).
+- [Feature] Admin dashboard traffic card shows an in/out graph for the last
+  hour, day, or week (sampled about once a minute into traffic_series.json).
+- [Feature] Admin users: note and tags on each `[[client]]` (shown on the
+  dashboard; comma-separated tags).
 - [Fix] Destination hourly stats compile on stable: `[u32; 48]` has no
   `Default` (arrays only up to 32), so `DomainEntry` implements it by hand.
 - [Feature] Admin dashboard Top domains periods include Last hour / За час

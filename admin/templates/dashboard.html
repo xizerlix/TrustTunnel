@@ -23,7 +23,7 @@
       <button type="button" id="dest-modal-close" class="text-slate-500 text-sm">{{ t.close }}</button>
     </div>
     <div class="flex flex-wrap gap-1 px-4 pt-3" id="dest-periods">
-      <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="hour">{{ t.dest_hour }}</button>
+      <button type="button" class="js-dest-period is-on px-2 py-1 text-xs rounded bg-slate-100" data-period="hour">{{ t.dest_hour }}</button>
       <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="today">{{ t.dest_today }}</button>
       <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.dest_week }}</button>
       <button type="button" class="js-dest-period px-2 py-1 text-xs rounded bg-slate-100" data-period="month">{{ t.dest_month }}</button>
@@ -43,6 +43,7 @@
      data-dest-loading="{{ t.dest_loading }}"
      data-dest-error="{{ t.dest_error }}"
      data-dest-empty="{{ t.dest_empty }}"
+     data-traf-empty="{{ t.traf_empty }}"
      data-lock-allow="{{ t.lock_allow }}"
      data-lock-block="{{ t.lock_block }}"
      data-lock-error="{{ t.lock_error }}"></div>
@@ -59,7 +60,8 @@
   var destBody = document.getElementById('dest-modal-body');
   var destTitle = document.getElementById('dest-modal-title');
     var destUser = null;
-    var destPeriod = 'today';
+    var destPeriod = 'hour';
+    var trafPeriod = 'hour';
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
@@ -75,6 +77,8 @@
       })
       .then(function (html) {
         if (html) root.innerHTML = html;
+        markTrafPeriod();
+        loadTraf();
       })
       .catch(function () {});
   }
@@ -146,9 +150,16 @@
       openDest('', destPeriod);
       return;
     }
+    var trafBtn = t.closest('.js-traf-period');
+    if (trafBtn) {
+      trafPeriod = trafBtn.getAttribute('data-period') || 'hour';
+      markTrafPeriod();
+      loadTraf();
+      return;
+    }
     var periodBtn = t.closest('.js-dest-period');
     if (periodBtn && destUser !== null) {
-      openDest(destUser, periodBtn.getAttribute('data-period') || 'today');
+      openDest(destUser, periodBtn.getAttribute('data-period') || 'hour');
     }
   });
 
@@ -230,7 +241,7 @@
 
   function openDest(user, period) {
     destUser = user;
-    destPeriod = period || 'today';
+    destPeriod = period || 'hour';
     modal.classList.add('hidden');
     destModal.classList.remove('hidden');
     destTitle.textContent = user ? user : i18n.getAttribute('data-dest-title');
@@ -272,6 +283,56 @@
         destBody.textContent = i18n.getAttribute('data-dest-error');
       });
   }
+
+  function markTrafPeriod() {
+    var buttons = document.querySelectorAll('.js-traf-period');
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].getAttribute('data-period') === trafPeriod) {
+        buttons[i].classList.add('is-on');
+      } else {
+        buttons[i].classList.remove('is-on');
+      }
+    }
+  }
+
+  function loadTraf() {
+    var el = document.getElementById('traf-chart');
+    if (!el) return;
+    fetch('/dashboard/traffic?period=' + encodeURIComponent(trafPeriod), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) return;
+        drawTraf(el, d.points || []);
+      })
+      .catch(function () {});
+  }
+
+  function drawTraf(el, points) {
+    if (!points.length) {
+      el.innerHTML = '<p class="traf-empty">' + escapeHtml(i18n.getAttribute('data-traf-empty') || '') + '</p>';
+      return;
+    }
+    var w = 360;
+    var h = 88;
+    var pad = 3;
+    var max = 1;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i].bytes > max) max = points[i].bytes;
+    }
+    var bw = (w - pad * 2) / points.length;
+    var html = '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">';
+    for (var j = 0; j < points.length; j++) {
+      var bh = Math.max(1.5, (points[j].bytes / max) * (h - pad * 2));
+      var x = pad + j * bw;
+      var y = h - pad - bh;
+      html += '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + Math.max(1, bw - 0.4).toFixed(2) + '" height="' + bh.toFixed(2) + '" fill="#6366f1" rx="0.8"/>';
+    }
+    html += '</svg>';
+    el.innerHTML = html;
+  }
+
+  markTrafPeriod();
+  loadTraf();
 
   document.getElementById('ip-modal-close').addEventListener('click', function () {
     modal.classList.add('hidden');

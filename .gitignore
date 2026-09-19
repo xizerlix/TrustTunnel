@@ -10,4 +10,5 @@ credentials.toml
 hosts.toml
 rules.toml
 dest_stats.json
+traffic_series.json
 .zcode/

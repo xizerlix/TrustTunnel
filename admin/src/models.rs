@@ -204,6 +204,10 @@ pub struct ClientEntry {
     pub max_traffic_bytes: u64,
     #[serde(default, skip_serializing_if = "is_false")]
     pub disabled: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(default, skip_serializing_if = "is_empty_vec")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

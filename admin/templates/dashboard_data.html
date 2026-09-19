@@ -51,12 +51,20 @@
     <div class="text-2xl font-semibold mt-1">{{ session_total }}</div>
   </div>
   <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 sm:col-span-2 xl:col-span-4">
-    <div class="text-sm text-slate-500">{{ t.traffic_period }}</div>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="text-sm text-slate-500">{{ t.traffic_period }}</div>
+      <div class="flex flex-wrap gap-1">
+        <button type="button" class="js-traf-period is-on px-2 py-1 text-xs rounded bg-slate-100" data-period="hour">{{ t.traf_hour }}</button>
+        <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="day">{{ t.traf_day }}</button>
+        <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.traf_week }}</button>
+      </div>
+    </div>
     <div class="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-lg">
       <span>↑ {{ traffic_outbound_h }}</span>
       <span>↓ {{ traffic_inbound_h }}</span>
       <span class="text-slate-400">Σ {{ traffic_total_h }}</span>
     </div>
+    <div id="traf-chart" class="traf-chart"></div>
     <button type="button" class="js-dest-all mt-3 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-slate-100 text-indigo-600">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
@@ -93,6 +101,16 @@
           <span class="text-xs text-rose-600 ml-1">({{ t.removed }})</span>
         {% else %}
           {% if !c.active %}<span class="text-xs text-slate-400 ml-1">({{ t.offline }})</span>{% endif %}
+        {% endif %}
+        {% if !c.tags.is_empty() %}
+        <div class="tag-row">
+          {% for tag in c.tags %}
+          <span class="tag-pill">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if !c.note.is_empty() %}
+        <div class="user-note">{{ c.note }}</div>
         {% endif %}
       </td>
       <td class="td-sess p-2">{{ c.sessions }}</td>

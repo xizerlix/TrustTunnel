@@ -11,6 +11,7 @@ mod models;
 mod paths;
 mod state;
 mod telegram;
+mod traffic_series;
 
 use crate::auth::{LoginLimiter, SessionStore};
 use crate::config::AdminConfig;
@@ -122,6 +123,18 @@ fn spawn_cleanup(state: AppState) {
             let ttl = Duration::from_secs(state.config.session_ttl_secs);
             state.sessions.cleanup_expired(ttl).await;
             state.login_limiter.cleanup_expired().await;
+            let root = state.paths.root.clone();
+            tokio::task::spawn_blocking(move || {
+                let (inn, out) = crate::handlers::dashboard::usage_file_totals(&root);
+                crate::traffic_series::record(
+                    &crate::traffic_series::series_path(&root),
+                    chrono::Local::now().timestamp(),
+                    inn,
+                    out,
+                );
+            })
+            .await
+            .ok();
         }
     });
 }
@@ -144,6 +157,11 @@ fn build_router(state: AppState) -> Router {
             "/dashboard/user/lock",
             post(handlers::dashboard::user_lock),
         )
+        .route(
+            "/dashboard/user/note",
+            post(handlers::dashboard::user_note),
+        )
+        .route("/dashboard/traffic", get(handlers::dashboard::traffic_series))
         .route(
             "/dashboard/service",
             post(handlers::dashboard::service_restart),
@@ -291,5 +309,9 @@ mod tests {
         assert!(dash.contains("user-table"));
         assert!(dash.contains("user-ip-line"));
         assert!(dash.contains("js-dest-all"));
+        assert!(dash.contains("js-traf-period"));
+        assert!(dash.contains("user-note") || include_str!("../templates/users.html").contains("name=\"note\""));
+        let modal = include_str!("../templates/dashboard.html");
+        assert!(modal.contains("data-period=\"hour\""));
     }
 }

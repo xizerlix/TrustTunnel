@@ -157,6 +157,12 @@ pub struct I18n {
     pub dest_error: &'static str,
     pub dest_hint: &'static str,
     pub h_dest_stats: &'static str,
+    pub user_note: &'static str,
+    pub user_tags: &'static str,
+    pub traf_hour: &'static str,
+    pub traf_day: &'static str,
+    pub traf_week: &'static str,
+    pub traf_empty: &'static str,
 }
 
 pub const EN: I18n = I18n {
@@ -298,8 +304,14 @@ pub const EN: I18n = I18n {
     dest_empty: "No domains yet. Names come from CONNECT host, TLS SNI, or DNS — not raw IPs.",
     dest_loading: "Loading…",
     dest_error: "Could not load domain stats.",
-    dest_hint: "By connections and DNS lookups. Hosts grouped to the domain (youtube.com).",
+    dest_hint: "By connections and DNS lookups. Hosts grouped to the domain (youtube.com). Last hour is this clock hour.",
     h_dest_stats: "JSON file with per-user domain counters for the dashboard. Empty uses dest_stats.json in the VPN working directory. Cheap: +1 per CONNECT hostname, TLS SNI, or DNS name — not per packet.",
+    user_note: "Note",
+    user_tags: "Tags",
+    traf_hour: "Hour",
+    traf_day: "Day",
+    traf_week: "Week",
+    traf_empty: "Graph fills as traffic is sampled (about once a minute).",
 };
 
 pub const RU: I18n = I18n {
@@ -441,8 +453,14 @@ pub const RU: I18n = I18n {
     dest_empty: "Пока нет доменов. Имена берутся из CONNECT, TLS SNI или DNS, не из сырых IP.",
     dest_loading: "Загрузка…",
     dest_error: "Не удалось загрузить статистику доменов.",
-    dest_hint: "По числу подключений и DNS. Хосты свёрнуты до домена (youtube.com).",
+    dest_hint: "По числу подключений и DNS. Хосты свёрнуты до домена (youtube.com). «За час» — текущий час.",
     h_dest_stats: "JSON со счётчиками доменов по пользователям. Пусто — dest_stats.json в каталоге VPN. Дёшево: +1 на CONNECT-хост, TLS SNI или DNS-имя, не на каждый пакет.",
+    user_note: "Заметка",
+    user_tags: "Теги",
+    traf_hour: "Час",
+    traf_day: "Сутки",
+    traf_week: "Неделя",
+    traf_empty: "График появится после пары минут сбора трафика.",
 };
 
 pub const LANG_COOKIE: &str = "tt_admin_lang";

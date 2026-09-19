@@ -238,6 +238,13 @@ protocol/deep-link format, library API) when relevant.
    per user, and load on username click or the traffic-card Top domains
    control (which sums every user) rather than the dashboard poll. Periods
    are last hour (current clock hour), today, week, month, and all time.
+   Last hour MUST match stored hour ids exactly (unix hour or local
+   day*24+hour), never via saturating subtraction (day ids looked like
+   "this hour" and cloned Today).
+   Admin dashboard SHOULD sample total traffic about once a minute into
+   `traffic_series.json` and chart hour/day/week on the traffic card.
+   User notes/tags live on `[[client]]` (`note`, `tags`); the users page
+   edits them and the dashboard shows them. Endpoint ignores unknown keys.
    Dashboard per-user lock MUST write `disabled = true` on the matching
    `[[client]]` in `credentials.toml` (absent/false = unlocked), then
    restart the endpoint so live sessions drop. User-page saves MUST keep

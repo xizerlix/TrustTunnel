@@ -1,5 +1,5 @@
 use crate::net_utils::TcpDestination;
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -76,9 +76,10 @@ impl DomainEntry {
         match period {
             DestPeriod::All => self.total,
             DestPeriod::Hour => {
+                let unix = unix_hour_id();
                 let mut sum = 0u64;
                 for i in 0..HOUR_SLOTS {
-                    if self.hours[i] != 0 && hour.saturating_sub(self.hours[i]) < 1 {
+                    if is_this_hour(self.hours[i], hour, unix) {
                         sum += u64::from(self.hour_slots[i]);
                     }
                 }
@@ -235,7 +236,21 @@ pub(crate) fn local_day_id() -> u32 {
 }
 
 fn local_hour_id() -> u32 {
+    packed_hour_id(chrono::Local::now())
+}
+
+fn unix_hour_id() -> u32 {
     (chrono::Local::now().timestamp().max(0) as u64 / 3600) as u32
+}
+
+fn packed_hour_id(now: chrono::DateTime<chrono::Local>) -> u32 {
+    let day = now.date_naive().num_days_from_ce().max(0) as u32;
+    let hod = now.time().hour();
+    day.saturating_mul(24).saturating_add(hod)
+}
+
+fn is_this_hour(stored: u32, packed: u32, unix: u32) -> bool {
+    stored != 0 && (stored == packed || stored == unix)
 }
 
 pub(crate) fn normalize_host(raw: &str) -> Option<String> {
@@ -599,6 +614,11 @@ mod tests {
         stats.record("alice", "youtube.com", 100, 49);
         let hour = stats.top("alice", DestPeriod::Hour, 100, 50);
         assert_eq!(hour, vec![("instagram.com".into(), 2)]);
+        stats.record("alice", "old.example", 90, 739000);
+        let hour = stats.top("alice", DestPeriod::Hour, 100, 50);
+        assert_eq!(hour, vec![("instagram.com".into(), 2)]);
+        let none = stats.top("alice", DestPeriod::Hour, 100, 1);
+        assert!(none.is_empty());
     }
 
     #[test]

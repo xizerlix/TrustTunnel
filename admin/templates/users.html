@@ -20,7 +20,7 @@
     <p class="text-xs text-slate-500 mt-1">{{ t.default_traffic_help }}</p>
   </div>
   <div class="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-100">
-  <table class="w-full text-sm min-w-[44rem]">
+  <table class="user-edit-table w-full text-sm min-w-[36rem]">
     <thead>
       <tr class="text-left border-b border-slate-200">
         <th class="p-2">{{ t.username }}</th>
@@ -28,6 +28,8 @@
         <th class="p-2">max_http2_conns</th>
         <th class="p-2">max_http3_conns</th>
         <th class="p-2">{{ t.traffic_gb }}</th>
+        <th class="p-2">{{ t.user_note }}</th>
+        <th class="p-2">{{ t.user_tags }}</th>
         <th class="p-2"></th>
       </tr>
     </thead>
@@ -39,6 +41,8 @@
         <td class="p-2"><input type="number" min="0" name="max_http2_conns" value="{{ c.max_http2_conns }}" placeholder="∞"></td>
         <td class="p-2"><input type="number" min="0" name="max_http3_conns" value="{{ c.max_http3_conns }}" placeholder="∞"></td>
         <td class="p-2"><input type="number" min="0" step="0.1" name="max_traffic_gb" value="{{ c.max_traffic_gb }}" placeholder="∞"></td>
+        <td class="p-2"><input type="text" name="note" value="{{ c.note }}" placeholder="{{ t.user_note }}" maxlength="200"></td>
+        <td class="p-2"><input type="text" name="tags" value="{{ c.tags }}" placeholder="{{ t.user_tags }}"></td>
         <td class="p-2 whitespace-nowrap">
           <button type="button" class="js-deeplink px-2 py-1 text-xs bg-indigo-600 text-white rounded" data-user="{{ c.username }}">{{ t.deeplink }}</button>
           <button type="submit" form="del-{{ loop.index0 }}" class="px-2 py-1 text-xs bg-rose-600 text-white rounded">{{ t.delete }}</button>
@@ -50,7 +54,9 @@
         <td class="p-2"><input type="password" name="password" placeholder="{{ t.password }}"></td>
         <td class="p-2"><input type="number" min="0" name="max_http2_conns" value=""></td>
         <td class="p-2"><input type="number" min="0" name="max_http3_conns" value=""></td>
-        <td class="p-2"><input type="number" min="0" step="0.1" name="max_traffic_gb" value=""></td>
+        <td class="p-2"><input type="number" min="0" step="0.1" name="max_traffic_gb" value="" placeholder="∞"></td>
+        <td class="p-2"><input type="text" name="note" value="" placeholder="{{ t.user_note }}" maxlength="200"></td>
+        <td class="p-2"><input type="text" name="tags" value="" placeholder="home, family"></td>
         <td></td>
       </tr>
     </tbody>

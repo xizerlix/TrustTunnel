@@ -32,6 +32,8 @@ pub struct UserEditRow {
     pub max_http2_conns: String,
     pub max_http3_conns: String,
     pub max_traffic_gb: String,
+    pub note: String,
+    pub tags: String,
 }
 
 fn rows_from(creds: &CredentialsToml) -> Vec<UserEditRow> {
@@ -51,6 +53,8 @@ fn rows_from(creds: &CredentialsToml) -> Vec<UserEditRow> {
                 String::new()
             },
             max_traffic_gb: bytes_to_gib_field(c.max_traffic_bytes),
+            note: c.note.clone(),
+            tags: c.tags.join(", "),
         })
         .collect()
 }
@@ -141,6 +145,8 @@ pub async fn users_save(
     let h2 = form_col(&map, "max_http2_conns");
     let h3 = form_col(&map, "max_http3_conns");
     let gb = form_col(&map, "max_traffic_gb");
+    let notes = form_col(&map, "note");
+    let tags = form_col(&map, "tags");
     let default_gb = form_col(&map, "default_traffic_gb")
         .into_iter()
         .next()
@@ -180,6 +186,10 @@ pub async fn users_save(
             max_http3_conns: h3.get(i).cloned().unwrap_or_default().parse().unwrap_or(0),
             max_traffic_bytes: gib_field_to_bytes(gb.get(i).map(|s| s.as_str()).unwrap_or("")),
             disabled: existing.map(|c| c.disabled).unwrap_or(false),
+            note: notes.get(i).cloned().unwrap_or_default(),
+            tags: crate::handlers::dashboard::parse_tags(
+                &tags.get(i).cloned().unwrap_or_default(),
+            ),
         });
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
