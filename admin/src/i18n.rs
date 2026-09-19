@@ -288,16 +288,16 @@ pub const EN: I18n = I18n {
     geo_loading: "Looking up…",
     geo_error: "Could not look up this address.",
     close: "Close",
-    dest_title: "Top destinations",
+    dest_title: "Top domains",
     dest_today: "Today",
     dest_week: "Week",
     dest_month: "Month",
     dest_all: "All time",
-    dest_empty: "No site names yet. Names come from CONNECT host, TLS SNI, or DNS — not raw IPs.",
+    dest_empty: "No domains yet. Names come from CONNECT host, TLS SNI, or DNS — not raw IPs.",
     dest_loading: "Loading…",
-    dest_error: "Could not load destination stats.",
-    dest_hint: "By connections and DNS lookups. Hosts grouped to the site (youtube.com).",
-    h_dest_stats: "JSON file with per-user site visit counters for the dashboard. Empty uses dest_stats.json in the VPN working directory. Cheap: +1 per CONNECT hostname, TLS SNI, or DNS name — not per packet.",
+    dest_error: "Could not load domain stats.",
+    dest_hint: "By connections and DNS lookups. Hosts grouped to the domain (youtube.com).",
+    h_dest_stats: "JSON file with per-user domain counters for the dashboard. Empty uses dest_stats.json in the VPN working directory. Cheap: +1 per CONNECT hostname, TLS SNI, or DNS name — not per packet.",
 };
 
 pub const RU: I18n = I18n {
@@ -430,16 +430,16 @@ pub const RU: I18n = I18n {
     geo_loading: "Загрузка…",
     geo_error: "Не удалось получить данные по адресу.",
     close: "Закрыть",
-    dest_title: "Популярные сайты",
+    dest_title: "Популярные домены",
     dest_today: "За сегодня",
     dest_week: "За неделю",
     dest_month: "За месяц",
     dest_all: "За всё время",
-    dest_empty: "Пока нет имён сайтов. Имена берутся из CONNECT, TLS SNI или DNS, не из сырых IP.",
+    dest_empty: "Пока нет доменов. Имена берутся из CONNECT, TLS SNI или DNS, не из сырых IP.",
     dest_loading: "Загрузка…",
-    dest_error: "Не удалось загрузить статистику сайтов.",
-    dest_hint: "По числу подключений и DNS. Хосты свёрнуты до сайта (youtube.com).",
-    h_dest_stats: "JSON со счётчиками посещений сайтов по пользователям. Пусто — dest_stats.json в каталоге VPN. Дёшево: +1 на CONNECT-хост, TLS SNI или DNS-имя, не на каждый пакет.",
+    dest_error: "Не удалось загрузить статистику доменов.",
+    dest_hint: "По числу подключений и DNS. Хосты свёрнуты до домена (youtube.com).",
+    h_dest_stats: "JSON со счётчиками доменов по пользователям. Пусто — dest_stats.json в каталоге VPN. Дёшево: +1 на CONNECT-хост, TLS SNI или DNS-имя, не на каждый пакет.",
 };
 
 pub const LANG_COOKIE: &str = "tt_admin_lang";

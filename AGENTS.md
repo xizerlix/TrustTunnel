@@ -235,7 +235,7 @@ protocol/deep-link format, library API) when relevant.
    Destination visit stats MUST increment once per tunneled TCP CONNECT
    hostname, TLS ClientHello SNI on IP CONNECTs, or DNS question on UDP/53
    (not per packet or byte), persist at most every 30s, cap domains
-   per user, and load on username click or the traffic-card Top destinations
+   per user, and load on username click or the traffic-card Top domains
    control (which sums every user) rather than the dashboard poll.
    Dashboard per-user lock MUST write `disabled = true` on the matching
    `[[client]]` in `credentials.toml` (absent/false = unlocked), then

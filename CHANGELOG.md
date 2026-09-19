@@ -8,8 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- [Feature] Admin dashboard traffic card: Top destinations shows the same
-  ranked site bars for all users together (today / week / month / all time).
+- [Fix] Admin dashboard labels destination stats as Top domains /
+  Популярные домены (CONNECT/SNI/DNS names, including CDNs, not only
+  websites).
+- [Feature] Admin dashboard traffic card: Top domains shows the same
+  ranked domain bars for all users together (today / week / month / all time).
 - [Fix] Admin dashboard user rows stack on phones so IP age and traffic
   stay on one line instead of wrapping beside empty table space.
 - [Fix] Admin dashboard lock is a dedicated Access column with a fixed-size
@@ -18,8 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [Feature] Admin dashboard: lock icon after each user's quota toggles
   `disabled` in `credentials.toml` (open = access, closed = blocked) and
   restarts the endpoint so existing sessions drop.
-- [Feature] Admin dashboard: click a username to see top destination sites
-  (CONNECT hostnames such as `instagram.com`) as ranked bars for today, week,
+- [Feature] Admin dashboard: click a username to see top domains
+  (CONNECT/SNI/DNS names such as `instagram.com` or a CDN) as ranked bars for today, week,
   month, or all time. The endpoint counts one increment per new TCP CONNECT
   hostname, TLS SNI (when CONNECT is an IP), or DNS name on UDP/53 into
   `destination_stats_file` (`dest_stats.json` by default), not per packet.
