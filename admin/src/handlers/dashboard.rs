@@ -101,7 +101,7 @@ struct UsageUser {
 }
 
 #[derive(Clone, Default)]
-struct LiveClient {
+pub(crate) struct LiveClient {
     username: String,
     sessions: u64,
     inbound: u64,
@@ -266,7 +266,7 @@ fn duration_since_usec(now: SystemTime, usec: u64) -> Option<Duration> {
     now.duration_since(then).ok()
 }
 
-pub fn parse_live_clients(live_json: &Value) -> Vec<LiveClient> {
+pub(crate) fn parse_live_clients(live_json: &Value) -> Vec<LiveClient> {
     let empty = Vec::new();
     let arr = match live_json {
         Value::Array(arr) => arr,
@@ -955,7 +955,7 @@ pub async fn user_destinations(
 }
 
 #[derive(Deserialize, Default)]
-struct TrafQuery {
+pub struct TrafQuery {
     #[serde(default)]
     period: String,
 }
@@ -1092,7 +1092,7 @@ fn toggle_client_disabled(toml_text: &str, username: &str) -> Result<(String, bo
 }
 
 #[derive(Deserialize, Default)]
-struct NoteBody {
+pub struct NoteBody {
     #[serde(default)]
     note: String,
     #[serde(default)]

@@ -11,10 +11,13 @@ use std::time::Duration;
 const DAY_SLOTS: usize = 32;
 const HOUR_SLOTS: usize = 48;
 const MAX_DOMAINS_PER_USER: usize = 48;
-pub(crate) const TOP_N: usize = 12;
 
+#[cfg(test)]
+const TOP_N: usize = 12;
+
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DestPeriod {
+enum DestPeriod {
     Hour,
     Today,
     Week,
@@ -22,6 +25,7 @@ pub(crate) enum DestPeriod {
     All,
 }
 
+#[cfg(test)]
 impl DestPeriod {
     fn window_days(self) -> Option<u32> {
         match self {
@@ -72,6 +76,7 @@ impl DomainEntry {
         self.total = self.total.saturating_add(u64::from(n));
     }
 
+    #[cfg(test)]
     fn in_window(&self, today: u32, hour: u32, period: DestPeriod) -> u64 {
         match period {
             DestPeriod::All => self.total,
@@ -178,7 +183,8 @@ impl DestinationStats {
         self.dirty.store(true, Ordering::Relaxed);
     }
 
-    pub(crate) fn top(
+    #[cfg(test)]
+    fn top(
         &self,
         username: &str,
         period: DestPeriod,
@@ -210,6 +216,7 @@ impl Drop for DestinationStats {
     }
 }
 
+#[cfg(test)]
 fn rank_domains(
     map: &HashMap<String, DomainEntry>,
     period: DestPeriod,
@@ -239,6 +246,7 @@ fn local_hour_id() -> u32 {
     packed_hour_id(chrono::Local::now())
 }
 
+#[cfg(test)]
 fn unix_hour_id() -> u32 {
     (chrono::Local::now().timestamp().max(0) as u64 / 3600) as u32
 }
@@ -249,6 +257,7 @@ fn packed_hour_id(now: chrono::DateTime<chrono::Local>) -> u32 {
     day.saturating_mul(24).saturating_add(hod)
 }
 
+#[cfg(test)]
 fn is_this_hour(stored: u32, packed: u32, unix: u32) -> bool {
     stored != 0 && (stored == packed || stored == unix)
 }
