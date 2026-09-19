@@ -34,13 +34,25 @@ impl DestPeriod {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct DomainEntry {
     total: u64,
     slots: [u32; DAY_SLOTS],
     days: [u32; DAY_SLOTS],
     hour_slots: [u32; HOUR_SLOTS],
     hours: [u32; HOUR_SLOTS],
+}
+
+impl Default for DomainEntry {
+    fn default() -> Self {
+        Self {
+            total: 0,
+            slots: [0; DAY_SLOTS],
+            days: [0; DAY_SLOTS],
+            hour_slots: [0; HOUR_SLOTS],
+            hours: [0; HOUR_SLOTS],
+        }
+    }
 }
 
 impl DomainEntry {

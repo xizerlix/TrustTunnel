@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Destination hourly stats compile on stable: `[u32; 48]` has no
+  `Default` (arrays only up to 32), so `DomainEntry` implements it by hand.
 - [Feature] Admin dashboard Top domains periods include Last hour / За час
   (current clock-hour bucket from dest_stats `hours`).
 - [Fix] Admin dashboard Top domains button moves below the traffic
