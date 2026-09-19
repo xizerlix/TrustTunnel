@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin dashboard Top domains button moves below the traffic
+  totals on the traffic card (was right-aligned in the header).
 - [Fix] Admin dashboard labels destination stats as Top domains /
   Популярные домены (CONNECT/SNI/DNS names, including CDNs, not only
   websites).
