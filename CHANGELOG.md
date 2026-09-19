@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin dashboard traffic card: Top destinations shows the same
+  ranked site bars for all users together (today / week / month / all time).
 - [Fix] Admin dashboard user rows stack on phones so IP age and traffic
   stay on one line instead of wrapping beside empty table space.
 - [Fix] Admin dashboard lock is a dedicated Access column with a fixed-size

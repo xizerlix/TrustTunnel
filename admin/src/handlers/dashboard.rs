@@ -881,6 +881,7 @@ struct OpJson {
 
 #[derive(Deserialize)]
 pub struct UserDestQuery {
+    #[serde(default)]
     pub user: String,
     #[serde(default)]
     pub period: String,
@@ -906,7 +907,7 @@ pub async fn user_destinations(
     Query(q): Query<UserDestQuery>,
 ) -> Response {
     let username = q.user.trim();
-    if username.is_empty() || username.len() > 128 || username.contains('\0') {
+    if username.len() > 128 || username.contains('\0') {
         return (
             StatusCode::BAD_REQUEST,
             Json(OpJson {
@@ -922,7 +923,11 @@ pub async fn user_destinations(
     let today = crate::dest_stats::local_day_id();
     let user = username.to_string();
     let rows = tokio::task::spawn_blocking(move || {
-        crate::dest_stats::top_for_user(&path, &user, period, today)
+        if user.is_empty() {
+            crate::dest_stats::top_all(&path, period, today)
+        } else {
+            crate::dest_stats::top_for_user(&path, &user, period, today)
+        }
     })
     .await
     .unwrap_or_default();

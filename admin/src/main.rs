@@ -290,5 +290,6 @@ mod tests {
         assert!(dash.contains("width=\"22\""));
         assert!(dash.contains("user-table"));
         assert!(dash.contains("user-ip-line"));
+        assert!(dash.contains("js-dest-all"));
     }
 }

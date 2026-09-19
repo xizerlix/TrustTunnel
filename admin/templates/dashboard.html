@@ -57,8 +57,8 @@
   var destModal = document.getElementById('dest-modal');
   var destBody = document.getElementById('dest-modal-body');
   var destTitle = document.getElementById('dest-modal-title');
-  var destUser = '';
-  var destPeriod = 'today';
+    var destUser = null;
+    var destPeriod = 'today';
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
@@ -140,8 +140,13 @@
       openDest(userBtn.getAttribute('data-user') || '', destPeriod);
       return;
     }
+    var allDest = t.closest('.js-dest-all');
+    if (allDest) {
+      openDest('', destPeriod);
+      return;
+    }
     var periodBtn = t.closest('.js-dest-period');
-    if (periodBtn && destUser) {
+    if (periodBtn && destUser !== null) {
       openDest(destUser, periodBtn.getAttribute('data-period') || 'today');
     }
   });
@@ -227,7 +232,7 @@
     destPeriod = period || 'today';
     modal.classList.add('hidden');
     destModal.classList.remove('hidden');
-    destTitle.textContent = user || i18n.getAttribute('data-dest-title');
+    destTitle.textContent = user ? user : i18n.getAttribute('data-dest-title');
     destBody.textContent = i18n.getAttribute('data-dest-loading');
     markPeriod(destPeriod);
     fetch('/dashboard/user?user=' + encodeURIComponent(user) + '&period=' + encodeURIComponent(destPeriod), {

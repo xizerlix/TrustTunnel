@@ -85,25 +85,61 @@ pub fn rank_user_json(
         return Vec::new();
     };
     let window = period.window_days();
-    let mut rows: Vec<(String, u64)> = map
-        .iter()
-        .filter_map(|(host, rec)| {
-            let n = match window {
-                None => rec.total,
-                Some(days) => rec
-                    .days
-                    .iter()
-                    .filter_map(|(k, n)| {
-                        k.parse::<u32>()
-                            .ok()
-                            .filter(|d| today.saturating_sub(*d) < days)
-                            .map(|_| u64::from(*n))
-                    })
-                    .sum(),
-            };
-            (n > 0).then(|| (host.clone(), n))
-        })
-        .collect();
+    rank_counts(map.iter().map(|(h, rec)| (h.clone(), count_record(rec, window, today))))
+}
+
+pub fn top_all(
+    path: &Path,
+    period: DestPeriod,
+    today: u32,
+) -> Vec<(String, u64)> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    rank_all_json(&content, period, today)
+}
+
+pub fn rank_all_json(json: &str, period: DestPeriod, today: u32) -> Vec<(String, u64)> {
+    let stored: HashMap<String, HashMap<String, FileDomain>> =
+        match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(_) => return Vec::new(),
+        };
+    let window = period.window_days();
+    let mut counts: HashMap<String, u64> = HashMap::new();
+    for map in stored.values() {
+        for (host, rec) in map {
+            let n = count_record(rec, window, today);
+            if n > 0 {
+                *counts.entry(host.clone()).or_default() += n;
+            }
+        }
+    }
+    rank_counts(counts.into_iter())
+}
+
+fn count_record(rec: &FileDomain, window: Option<u32>, today: u32) -> u64 {
+    match window {
+        None => rec.total,
+        Some(days) => rec
+            .days
+            .iter()
+            .filter_map(|(k, n)| {
+                k.parse::<u32>()
+                    .ok()
+                    .filter(|d| today.saturating_sub(*d) < days)
+                    .map(|_| u64::from(*n))
+            })
+            .sum(),
+    }
+}
+
+fn rank_counts<I>(counts: I) -> Vec<(String, u64)>
+where
+    I: IntoIterator<Item = (String, u64)>,
+{
+    let mut rows: Vec<(String, u64)> = counts.into_iter().filter(|(_, n)| *n > 0).collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     rows.truncate(TOP_N);
     rows
@@ -156,6 +192,31 @@ mod tests {
     #[test]
     fn missing_user_is_empty() {
         assert!(rank_user_json("{}", "alice", DestPeriod::Today, 1).is_empty());
+    }
+
+    #[test]
+    fn ranks_all_users_summed() {
+        let json = r#"{
+            "alice": {
+                "instagram.com": {"total": 10, "days": {"100": 4}},
+                "youtube.com": {"total": 8, "days": {"100": 8}}
+            },
+            "bob": {
+                "instagram.com": {"total": 3, "days": {"100": 3}},
+                "tiktok.com": {"total": 1, "days": {"100": 1}}
+            }
+        }"#;
+        let today = rank_all_json(json, DestPeriod::Today, 100);
+        assert_eq!(
+            today,
+            vec![
+                ("youtube.com".into(), 8),
+                ("instagram.com".into(), 7),
+                ("tiktok.com".into(), 1),
+            ]
+        );
+        let all = rank_all_json(json, DestPeriod::All, 100);
+        assert_eq!(all[0], ("instagram.com".into(), 13));
     }
 
     #[test]
