@@ -9,11 +9,13 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 const DAY_SLOTS: usize = 32;
+const HOUR_SLOTS: usize = 48;
 const MAX_DOMAINS_PER_USER: usize = 48;
 pub(crate) const TOP_N: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DestPeriod {
+    Hour,
     Today,
     Week,
     Month,
@@ -23,6 +25,7 @@ pub(crate) enum DestPeriod {
 impl DestPeriod {
     fn window_days(self) -> Option<u32> {
         match self {
+            Self::Hour => None,
             Self::Today => Some(1),
             Self::Week => Some(7),
             Self::Month => Some(31),
@@ -36,23 +39,41 @@ struct DomainEntry {
     total: u64,
     slots: [u32; DAY_SLOTS],
     days: [u32; DAY_SLOTS],
+    hour_slots: [u32; HOUR_SLOTS],
+    hours: [u32; HOUR_SLOTS],
 }
 
 impl DomainEntry {
-    fn add(&mut self, day: u32, n: u32) {
+    fn add(&mut self, day: u32, hour: u32, n: u32) {
         let i = (day as usize) % DAY_SLOTS;
         if self.days[i] != day {
             self.slots[i] = 0;
             self.days[i] = day;
         }
         self.slots[i] = self.slots[i].saturating_add(n);
+        let hi = (hour as usize) % HOUR_SLOTS;
+        if self.hours[hi] != hour {
+            self.hour_slots[hi] = 0;
+            self.hours[hi] = hour;
+        }
+        self.hour_slots[hi] = self.hour_slots[hi].saturating_add(n);
         self.total = self.total.saturating_add(u64::from(n));
     }
 
-    fn in_window(&self, today: u32, window: Option<u32>) -> u64 {
-        match window {
-            None => self.total,
-            Some(days) => {
+    fn in_window(&self, today: u32, hour: u32, period: DestPeriod) -> u64 {
+        match period {
+            DestPeriod::All => self.total,
+            DestPeriod::Hour => {
+                let mut sum = 0u64;
+                for i in 0..HOUR_SLOTS {
+                    if self.hours[i] != 0 && hour.saturating_sub(self.hours[i]) < 1 {
+                        sum += u64::from(self.hour_slots[i]);
+                    }
+                }
+                sum
+            }
+            _ => {
+                let days = period.window_days().unwrap_or(0);
                 let mut sum = 0u64;
                 for i in 0..DAY_SLOTS {
                     if self.days[i] != 0 && today.saturating_sub(self.days[i]) < days {
@@ -114,15 +135,15 @@ impl DestinationStats {
             TcpDestination::HostName((host, _)) => host.as_str(),
             TcpDestination::Address(_) => return false,
         };
-        self.record(username, host, local_day_id());
+        self.record(username, host, local_day_id(), local_hour_id());
         true
     }
 
     pub fn record_host(&self, username: &str, host: &str) {
-        self.record(username, host, local_day_id());
+        self.record(username, host, local_day_id(), local_hour_id());
     }
 
-    fn record(&self, username: &str, host: &str, day: u32) {
+    fn record(&self, username: &str, host: &str, day: u32, hour: u32) {
         let Some(host) = normalize_host(host) else {
             return;
         };
@@ -140,16 +161,22 @@ impl DestinationStats {
                 map.remove(&victim);
             }
         }
-        map.entry(host).or_default().add(day, 1);
+        map.entry(host).or_default().add(day, hour, 1);
         self.dirty.store(true, Ordering::Relaxed);
     }
 
-    pub(crate) fn top(&self, username: &str, period: DestPeriod, day: u32) -> Vec<(String, u64)> {
+    pub(crate) fn top(
+        &self,
+        username: &str,
+        period: DestPeriod,
+        day: u32,
+        hour: u32,
+    ) -> Vec<(String, u64)> {
         let users = self.users.lock().unwrap();
         let Some(map) = users.get(username) else {
             return Vec::new();
         };
-        rank_domains(map, period, day)
+        rank_domains(map, period, day, hour)
     }
 
     pub(crate) fn persist_now(&self) {
@@ -174,12 +201,12 @@ fn rank_domains(
     map: &HashMap<String, DomainEntry>,
     period: DestPeriod,
     day: u32,
+    hour: u32,
 ) -> Vec<(String, u64)> {
-    let window = period.window_days();
     let mut rows: Vec<(String, u64)> = map
         .iter()
         .filter_map(|(host, entry)| {
-            let n = entry.in_window(day, window);
+            let n = entry.in_window(day, hour, period);
             (n > 0).then(|| (host.clone(), n))
         })
         .collect();
@@ -193,6 +220,10 @@ pub(crate) fn local_day_id() -> u32 {
         .date_naive()
         .num_days_from_ce()
         .max(0) as u32
+}
+
+fn local_hour_id() -> u32 {
+    (chrono::Local::now().timestamp().max(0) as u64 / 3600) as u32
 }
 
 pub(crate) fn normalize_host(raw: &str) -> Option<String> {
@@ -398,6 +429,8 @@ struct FileDomain {
     total: u64,
     #[serde(default)]
     days: HashMap<String, u32>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    hours: HashMap<String, u32>,
 }
 
 fn load_file(path: Option<&Path>) -> UserMap {
@@ -432,6 +465,13 @@ fn load_file(path: Option<&Path>) -> UserMap {
                             entry.slots[i] = n;
                         }
                     }
+                    for (k, n) in rec.hours {
+                        if let Ok(hour) = k.parse::<u32>() {
+                            let i = (hour as usize) % HOUR_SLOTS;
+                            entry.hours[i] = hour;
+                            entry.hour_slots[i] = n;
+                        }
+                    }
                     (host, entry)
                 })
                 .collect();
@@ -460,11 +500,18 @@ fn persist_map(users: &Mutex<UserMap>, path: &Path, dirty: &AtomicBool, force: b
                             days.insert(entry.days[i].to_string(), entry.slots[i]);
                         }
                     }
+                    let mut hours = HashMap::new();
+                    for i in 0..HOUR_SLOTS {
+                        if entry.hours[i] != 0 && entry.hour_slots[i] > 0 {
+                            hours.insert(entry.hours[i].to_string(), entry.hour_slots[i]);
+                        }
+                    }
                     (
                         host.clone(),
                         FileDomain {
                             total: entry.total,
                             days,
+                            hours,
                         },
                     )
                 })
@@ -515,11 +562,11 @@ mod tests {
     #[test]
     fn ranks_today_and_all_time() {
         let stats = DestinationStats::new(None);
-        stats.record("alice", "instagram.com", 100);
-        stats.record("alice", "instagram.com", 100);
-        stats.record("alice", "youtube.com", 100);
-        stats.record("alice", "old.example", 90);
-        let today = stats.top("alice", DestPeriod::Today, 100);
+        stats.record("alice", "instagram.com", 100, 10);
+        stats.record("alice", "instagram.com", 100, 10);
+        stats.record("alice", "youtube.com", 100, 10);
+        stats.record("alice", "old.example", 90, 10);
+        let today = stats.top("alice", DestPeriod::Today, 100, 10);
         assert_eq!(
             today,
             vec![
@@ -527,9 +574,19 @@ mod tests {
                 ("youtube.com".into(), 1),
             ]
         );
-        let all = stats.top("alice", DestPeriod::All, 100);
+        let all = stats.top("alice", DestPeriod::All, 100, 10);
         assert_eq!(all[0], ("instagram.com".into(), 2));
         assert!(all.iter().any(|(h, n)| h == "old.example" && *n == 1));
+    }
+
+    #[test]
+    fn ranks_current_hour() {
+        let stats = DestinationStats::new(None);
+        stats.record("alice", "instagram.com", 100, 50);
+        stats.record("alice", "instagram.com", 100, 50);
+        stats.record("alice", "youtube.com", 100, 49);
+        let hour = stats.top("alice", DestPeriod::Hour, 100, 50);
+        assert_eq!(hour, vec![("instagram.com".into(), 2)]);
     }
 
     #[test]
@@ -543,7 +600,7 @@ mod tests {
             "alice",
             &TcpDestination::HostName(("cdn.tiktok.com".into(), 443)),
         );
-        let top = stats.top("alice", DestPeriod::All, local_day_id());
+        let top = stats.top("alice", DestPeriod::All, local_day_id(), 0);
         assert_eq!(top, vec![("tiktok.com".into(), 1)]);
     }
 
@@ -614,12 +671,12 @@ mod tests {
         let path = file.path().to_path_buf();
         {
             let stats = DestinationStats::new(Some(path.clone()));
-            stats.record("bob", "example.com", 50);
+            stats.record("bob", "example.com", 50, 3);
             stats.persist_now();
         }
         let reloaded = DestinationStats::new(Some(path));
         assert_eq!(
-            reloaded.top("bob", DestPeriod::All, 50),
+            reloaded.top("bob", DestPeriod::All, 50, 3),
             vec![("example.com".into(), 1)]
         );
     }
@@ -628,9 +685,9 @@ mod tests {
     fn evicts_least_used_at_cap() {
         let stats = DestinationStats::new(None);
         for i in 0..MAX_DOMAINS_PER_USER {
-            stats.record("u", &format!("site{i}.com"), 1);
+            stats.record("u", &format!("site{i}.com"), 1, 1);
         }
-        stats.record("u", "later.com", 1);
+        stats.record("u", "later.com", 1, 1);
         let map = stats.users.lock().unwrap();
         let user = map.get("u").unwrap();
         assert_eq!(user.len(), MAX_DOMAINS_PER_USER);

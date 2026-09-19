@@ -7,6 +7,7 @@ const TOP_N: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DestPeriod {
+    Hour,
     Today,
     Week,
     Month,
@@ -16,6 +17,7 @@ pub enum DestPeriod {
 impl DestPeriod {
     pub fn parse(s: &str) -> Self {
         match s {
+            "hour" => Self::Hour,
             "week" => Self::Week,
             "month" => Self::Month,
             "all" => Self::All,
@@ -25,6 +27,7 @@ impl DestPeriod {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Hour => "hour",
             Self::Today => "today",
             Self::Week => "week",
             Self::Month => "month",
@@ -34,10 +37,10 @@ impl DestPeriod {
 
     fn window_days(self) -> Option<u32> {
         match self {
+            Self::Hour | Self::All => None,
             Self::Today => Some(1),
             Self::Week => Some(7),
             Self::Month => Some(31),
-            Self::All => None,
         }
     }
 }
@@ -48,6 +51,8 @@ struct FileDomain {
     total: u64,
     #[serde(default)]
     days: HashMap<String, u32>,
+    #[serde(default)]
+    hours: HashMap<String, u32>,
 }
 
 pub fn local_day_id() -> u32 {
@@ -57,17 +62,22 @@ pub fn local_day_id() -> u32 {
         .max(0) as u32
 }
 
+pub fn local_hour_id() -> u32 {
+    (chrono::Local::now().timestamp().max(0) as u64 / 3600) as u32
+}
+
 pub fn top_for_user(
     path: &Path,
     username: &str,
     period: DestPeriod,
     today: u32,
+    hour: u32,
 ) -> Vec<(String, u64)> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
-    rank_user_json(&content, username, period, today)
+    rank_user_json(&content, username, period, today, hour)
 }
 
 pub fn rank_user_json(
@@ -75,6 +85,7 @@ pub fn rank_user_json(
     username: &str,
     period: DestPeriod,
     today: u32,
+    hour: u32,
 ) -> Vec<(String, u64)> {
     let stored: HashMap<String, HashMap<String, FileDomain>> =
         match serde_json::from_str(json) {
@@ -84,33 +95,39 @@ pub fn rank_user_json(
     let Some(map) = stored.get(username) else {
         return Vec::new();
     };
-    let window = period.window_days();
-    rank_counts(map.iter().map(|(h, rec)| (h.clone(), count_record(rec, window, today))))
+    rank_counts(map.iter().map(|(h, rec)| {
+        (h.clone(), count_record(rec, period, today, hour))
+    }))
 }
 
 pub fn top_all(
     path: &Path,
     period: DestPeriod,
     today: u32,
+    hour: u32,
 ) -> Vec<(String, u64)> {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
-    rank_all_json(&content, period, today)
+    rank_all_json(&content, period, today, hour)
 }
 
-pub fn rank_all_json(json: &str, period: DestPeriod, today: u32) -> Vec<(String, u64)> {
+pub fn rank_all_json(
+    json: &str,
+    period: DestPeriod,
+    today: u32,
+    hour: u32,
+) -> Vec<(String, u64)> {
     let stored: HashMap<String, HashMap<String, FileDomain>> =
         match serde_json::from_str(json) {
             Ok(v) => v,
             Err(_) => return Vec::new(),
         };
-    let window = period.window_days();
     let mut counts: HashMap<String, u64> = HashMap::new();
     for map in stored.values() {
         for (host, rec) in map {
-            let n = count_record(rec, window, today);
+            let n = count_record(rec, period, today, hour);
             if n > 0 {
                 *counts.entry(host.clone()).or_default() += n;
             }
@@ -119,19 +136,31 @@ pub fn rank_all_json(json: &str, period: DestPeriod, today: u32) -> Vec<(String,
     rank_counts(counts.into_iter())
 }
 
-fn count_record(rec: &FileDomain, window: Option<u32>, today: u32) -> u64 {
-    match window {
-        None => rec.total,
-        Some(days) => rec
-            .days
+fn count_record(rec: &FileDomain, period: DestPeriod, today: u32, hour: u32) -> u64 {
+    match period {
+        DestPeriod::All => rec.total,
+        DestPeriod::Hour => rec
+            .hours
             .iter()
             .filter_map(|(k, n)| {
                 k.parse::<u32>()
                     .ok()
-                    .filter(|d| today.saturating_sub(*d) < days)
+                    .filter(|h| hour.saturating_sub(*h) < 1)
                     .map(|_| u64::from(*n))
             })
             .sum(),
+        _ => {
+            let days = period.window_days().unwrap_or(0);
+            rec.days
+                .iter()
+                .filter_map(|(k, n)| {
+                    k.parse::<u32>()
+                        .ok()
+                        .filter(|d| today.saturating_sub(*d) < days)
+                        .map(|_| u64::from(*n))
+                })
+                .sum()
+        }
     }
 }
 
@@ -175,7 +204,7 @@ mod tests {
                 "youtube.com": {"total": 2, "days": {"100": 2}}
             }
         }"#;
-        let today = rank_user_json(json, "alice", DestPeriod::Today, 100);
+        let today = rank_user_json(json, "alice", DestPeriod::Today, 100, 0);
         assert_eq!(
             today,
             vec![
@@ -183,15 +212,15 @@ mod tests {
                 ("youtube.com".into(), 2),
             ]
         );
-        let all = rank_user_json(json, "alice", DestPeriod::All, 100);
+        let all = rank_user_json(json, "alice", DestPeriod::All, 100, 0);
         assert_eq!(all[0], ("instagram.com".into(), 10));
-        let week = rank_user_json(json, "alice", DestPeriod::Week, 100);
+        let week = rank_user_json(json, "alice", DestPeriod::Week, 100, 0);
         assert_eq!(week[0], ("instagram.com".into(), 4));
     }
 
     #[test]
     fn missing_user_is_empty() {
-        assert!(rank_user_json("{}", "alice", DestPeriod::Today, 1).is_empty());
+        assert!(rank_user_json("{}", "alice", DestPeriod::Today, 1, 0).is_empty());
     }
 
     #[test]
@@ -206,7 +235,7 @@ mod tests {
                 "tiktok.com": {"total": 1, "days": {"100": 1}}
             }
         }"#;
-        let today = rank_all_json(json, DestPeriod::Today, 100);
+        let today = rank_all_json(json, DestPeriod::Today, 100, 0);
         assert_eq!(
             today,
             vec![
@@ -215,12 +244,30 @@ mod tests {
                 ("tiktok.com".into(), 1),
             ]
         );
-        let all = rank_all_json(json, DestPeriod::All, 100);
+        let all = rank_all_json(json, DestPeriod::All, 100, 0);
         assert_eq!(all[0], ("instagram.com".into(), 13));
     }
 
     #[test]
+    fn ranks_current_hour() {
+        let json = r#"{
+            "alice": {
+                "instagram.com": {"total": 10, "days": {"100": 10}, "hours": {"50": 4, "49": 6}},
+                "youtube.com": {"total": 2, "days": {"100": 2}, "hours": {"49": 2}}
+            },
+            "bob": {
+                "instagram.com": {"total": 3, "days": {"100": 3}, "hours": {"50": 3}}
+            }
+        }"#;
+        let hour = rank_user_json(json, "alice", DestPeriod::Hour, 100, 50);
+        assert_eq!(hour, vec![("instagram.com".into(), 4)]);
+        let all_hour = rank_all_json(json, DestPeriod::Hour, 100, 50);
+        assert_eq!(all_hour, vec![("instagram.com".into(), 7)]);
+    }
+
+    #[test]
     fn period_parse_round_trips() {
+        assert_eq!(DestPeriod::parse("hour").as_str(), "hour");
         assert_eq!(DestPeriod::parse("week").as_str(), "week");
         assert_eq!(DestPeriod::parse("month").as_str(), "month");
         assert_eq!(DestPeriod::parse("all").as_str(), "all");

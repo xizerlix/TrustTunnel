@@ -921,12 +921,13 @@ pub async fn user_destinations(
     let vpn_text = std::fs::read_to_string(&state.paths.vpn_toml).ok();
     let path = crate::dest_stats::resolve_dest_stats_path(&state.paths.root, vpn_text.as_deref());
     let today = crate::dest_stats::local_day_id();
+    let hour = crate::dest_stats::local_hour_id();
     let user = username.to_string();
     let rows = tokio::task::spawn_blocking(move || {
         if user.is_empty() {
-            crate::dest_stats::top_all(&path, period, today)
+            crate::dest_stats::top_all(&path, period, today, hour)
         } else {
-            crate::dest_stats::top_for_user(&path, &user, period, today)
+            crate::dest_stats::top_for_user(&path, &user, period, today, hour)
         }
     })
     .await
