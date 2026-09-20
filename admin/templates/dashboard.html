@@ -433,11 +433,12 @@
     }
     var inner = w - padL - padR;
     var bw = inner / points.length;
+    var gap = Math.min(bw * 0.08, 0.12);
+    var rw = Math.max(bw * 0.9, bw - gap);
     var plotH = h - padT - padB;
     var html = '<div class="traf-plot" data-vb="' + w + '" data-pad="' + padL + '" data-bw="' + bw + '"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" class="traf-svg">';
     var hits = '';
     for (j = 0; j < points.length; j++) {
-      var x = padL + j * bw;
       var rw = Math.max(0.6, bw - 0.35);
       var val = ptVal(points[j]);
       var bh = 0;
@@ -476,13 +477,14 @@
   function readoutOf(plot) {
     return plot.parentElement && plot.parentElement.querySelector('.traf-readout');
   }
-  function pickChart(plot, clientX, clientY) {
+  function pickChart(plot, clientX) {
     if (!plot) return;
     if (activePlot && activePlot !== plot) hideChartPick(activePlot);
     activePlot = plot;
     var hits = plot.querySelectorAll('.traf-hit');
     if (!hits.length) return;
-    var rect = plot.getBoundingClientRect();
+    var svg = plot.querySelector('svg') || plot;
+    var rect = svg.getBoundingClientRect();
     var vb = parseFloat(plot.getAttribute('data-vb') || '360');
     var pad = parseFloat(plot.getAttribute('data-pad') || '0');
     var bw = parseFloat(plot.getAttribute('data-bw') || '1');
@@ -496,10 +498,9 @@
     var sel = plot.querySelector('.traf-sel');
     if (sel) {
       sel.setAttribute('x', hit.getAttribute('data-bx') || '0');
-      sel.setAttribute('y', hit.getAttribute('data-by') || '0');
       sel.setAttribute('width', hit.getAttribute('data-bw') || '1');
-      sel.setAttribute('height', hit.getAttribute('data-bh') || '1');
-      sel.setAttribute('visibility', 'visible');
+      sel.setAttribute('y', '0');
+      sel.setAttribute('height', String(vb > 0 ? 52 : 52));
     }
     plot.classList.add('is-pick');
     if (trafTip) trafTip.classList.add('hidden');
@@ -507,8 +508,9 @@
   function hideChartPick(plot) {
     if (!plot) return;
     plot.classList.remove('is-pick');
-    var sel = plot.querySelector('.traf-sel');
-    if (sel) sel.setAttribute('visibility', 'hidden');
+    if (sel) {
+      sel.setAttribute('width', '0');
+    }
     var readout = readoutOf(plot);
     if (readout) readout.textContent = readout.getAttribute('data-latest') || readout.textContent;
     if (activePlot === plot) activePlot = null;
@@ -517,14 +519,14 @@
   document.addEventListener('pointermove', function (e) {
     var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
     if (plot) {
-      pickChart(plot, e.clientX, e.clientY);
+      pickChart(plot, e.clientX);
       return;
     }
     if (activePlot) hideChartPick(activePlot);
   });
   document.addEventListener('pointerdown', function (e) {
     var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
-    if (plot) pickChart(plot, e.clientX, e.clientY);
+    if (plot) pickChart(plot, e.clientX);
   });
   document.addEventListener('pointerup', function (e) {
     if (e.pointerType === 'mouse') return;
