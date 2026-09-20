@@ -25,17 +25,17 @@
       <span>{{ t.cpu }} <b style="color: {{ host_load_color }}">{{ host_load }}</b></span>
       <span>{{ t.ram }} <b style="color: {{ host_ram_color }}">{{ host_ram }}</b></span>
       <span>{{ t.disk }} <b style="color: {{ host_disk_color }}">{{ host_disk }}</b></span>
-      <span>{{ t.host_uptime }} {{ host_uptime }}</span>
     </div>
+    <div class="stat-sub">{{ t.host_uptime }} {{ host_uptime }}</div>
     <div class="stat-cert">
       {% if cert_subject.is_empty() %}
         {% if cert_expiry.is_empty() %}
-          <span class="text-slate-400">{{ t.cert_missing }}</span>
+          <span class="text-slate-400">{{ t.certificates }}: {{ t.cert_missing }}</span>
         {% else %}
-          {{ t.expires }} {{ cert_expiry }}
+          {{ t.certificates }}: {{ t.expires }} {{ cert_expiry }}
         {% endif %}
       {% else %}
-        {{ cert_subject }} · {{ t.expires }} {{ cert_expiry }}
+        {{ t.certificates }}: {{ cert_subject }} · {{ t.expires }} {{ cert_expiry }}
       {% endif %}
     </div>
     <button type="button" class="js-host-reboot stat-btn stat-btn-danger">{{ t.reboot_host }}</button>
@@ -84,7 +84,6 @@
       <div id="traf-chart" class="traf-chart"></div>
     </section>
   </div>
-  <div id="chart-axis" class="traf-axis"></div>
 </div>
 
 <h2 class="text-lg font-semibold mb-2">{{ t.per_user }}</h2>

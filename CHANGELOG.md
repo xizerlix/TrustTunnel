@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin host/CPU/RAM/I/O/traffic charts stack with a time axis under
+  each plot; host card shows uptime on its own line and a Certificate label.
 - [Feature] Admin dashboard compact status row plus CPU / RAM / disk I/O
   charts sharing the traffic graph time step (same hour/day/week buckets).
 - [Fix] Admin dashboard graph and Top domains no longer flash empty while

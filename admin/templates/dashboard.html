@@ -81,7 +81,7 @@
       })
       .then(function (html) {
         if (!html) return;
-        var ids = ['cpu-chart', 'ram-chart', 'io-chart', 'traf-chart', 'chart-axis'];
+        var ids = ['cpu-chart', 'ram-chart', 'io-chart', 'traf-chart'];
         var saved = {};
         for (var i = 0; i < ids.length; i++) {
           var n = document.getElementById(ids[i]);
@@ -339,7 +339,6 @@
         drawTraf(document.getElementById('ram-chart'), d.ram || [], period, '#10b981', 'pct');
         drawTraf(document.getElementById('io-chart'), d.io || [], period, '#8b5cf6', 'bytes');
         drawTraf(document.getElementById('traf-chart'), d.traffic || d.points || [], period, '#6366f1', 'bytes');
-        fillAxis(period);
       })
       .catch(function () {});
   }
@@ -395,17 +394,6 @@
     return (n / 1000).toFixed(1) + ' %';
   }
 
-  function fillAxis(period) {
-    var el = document.getElementById('chart-axis');
-    if (!el) return;
-    var labels = trafAxisLabels(period);
-    var html = '';
-    for (var k = 0; k < labels.length; k++) {
-      html += '<span>' + labels[k] + '</span>';
-    }
-    el.innerHTML = html;
-  }
-
   function drawTraf(el, points, period, color, kind) {
     if (!el) return;
     if (!points.length) {
@@ -445,7 +433,12 @@
       var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
       hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
-    html += hits + '</svg></div>';
+    html += hits + '</svg></div><div class="traf-axis">';
+    var labels = trafAxisLabels(period);
+    for (var k = 0; k < labels.length; k++) {
+      html += '<span>' + labels[k] + '</span>';
+    }
+    html += '</div>';
     el.innerHTML = html;
   }
 

@@ -245,9 +245,9 @@ protocol/deep-link format, library API) when relevant.
    (60s last hour, 15min last day, 1h last week). CPU and RAM charts use
    the same buckets, scale to 100%, and store milli-percent in
    `traffic_series.json`. Disk I/O bars are byte deltas from `/sys/block`
-   (skip loop/ram/sr/dm). The X axis MUST be labeled once for the group
-   at window quarters. Hover MUST show local clock time and the series
-   unit (bytes 1024, or percent). Do not label Y.
+   (skip loop/ram/sr/dm). Charts MUST stack vertically, each with its own
+   X axis at window quarters (hour: 0 15 30 45 60). Hover MUST show local
+   clock time and the series unit (bytes 1024, or percent). Do not label Y.
    Dashboard poll MUST keep existing chart SVGs (`#cpu-chart`,
    `#ram-chart`, `#io-chart`, `#traf-chart`); do not wipe then refetch.
    Dest modal period/user switches MUST keep the previous list until the
