@@ -365,22 +365,19 @@ textarea:focus {
 .stat-actions {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-start;
   gap: 0.35rem;
   margin-top: 0.35rem;
 }
-.stat-actions > div {
-  display: block;
-  width: 100%;
-}
 .stat-actions .stat-btn,
 .stat-actions .stat-btn-dest {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   margin-top: 0;
   margin-bottom: 0;
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .stat-btn-dest {
   display: inline-flex;
