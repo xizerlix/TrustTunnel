@@ -14,23 +14,30 @@
         {% if let Some(u) = since_label %} {{ u }}{% else %} — {{ t.unknown }}{% endif %}
       </div>
     {% endif %}
-    <button type="button" class="js-dest-all stat-btn-dest">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
-      </svg>
-      {{ t.dest_title }}
-    </button>
-    <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
-      {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
-    </button>
+    <div class="stat-actions">
+      <div>
+      <button type="button" class="js-dest-all stat-btn-dest">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
+        </svg>
+        {{ t.dest_title }}
+      </button>
+      </div>
+      <div>
+      <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
+        {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
+      </button>
+      </div>
+    </div>
   </div>
   <div class="stat-card">
     <div class="stat-label">{{ t.host }}</div>
-    <div class="stat-val stat-host">{{ host_version }}</div>
+    <div class="stat-val stat-host">{{ host_hostname }}</div>
+    <div class="stat-sub">{{ host_version }}</div>
     <div class="stat-metrics">
-      <span>{{ t.cpu }} <b style="color: {{ host_load_color }}">{{ host_load }}</b></span>
-      <span>{{ t.ram }} <b style="color: {{ host_ram_color }}">{{ host_ram }}</b></span>
-      <span>{{ t.disk }} <b style="color: {{ host_disk_color }}">{{ host_disk }}</b></span>
+      <span>{{ host_cores }} {{ t.cores }}</span>
+      <span>{{ host_ram_total }} {{ t.ram }}</span>
+      <span>{{ t.disk }} {{ host_disk_size }}</span>
     </div>
     <div class="stat-sub">{{ t.host_uptime }} {{ host_uptime }}</div>
     <div class="stat-cert">
@@ -65,7 +72,8 @@
     </div>
   </div>
   <div class="chart-grid">
-    <section class="chart-cell">
+    <section class="chart-cell chart-cell-top">
+      <button type="button" class="js-chart-info chart-info" title="{{ t.chart_help_title }}" aria-label="{{ t.chart_help_title }}">i</button>
       <div class="chart-title chart-title-cpu">{{ t.cpu }}</div>
       <div id="cpu-chart" class="traf-chart"></div>
     </section>

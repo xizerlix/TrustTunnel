@@ -252,6 +252,9 @@ protocol/deep-link format, library API) when relevant.
    show local clock time and the series unit (bytes 1024, or percent),
    with a readout under the plot on tap. Do not label Y.
    Top domains control lives on the service card, above restart.
+   Chart hairline MUST hide when the pointer or finger leaves the plot.
+   The readout under each chart MUST always show the latest bucket
+   (fixed height, no layout jump).
    Dashboard poll MUST keep existing chart SVGs (`#cpu-chart`,
    `#ram-chart`, `#io-chart`, `#traf-chart`); do not wipe then refetch.
    Dest modal period/user switches MUST keep the previous list until the

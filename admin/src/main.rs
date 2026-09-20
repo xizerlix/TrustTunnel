@@ -322,6 +322,10 @@ mod tests {
         assert!(dash.contains("user-table"));
         assert!(dash.contains("user-ip-line"));
         assert!(dash.contains("js-dest-all"));
+        assert!(dash.contains("stat-actions"));
+        assert!(dash.contains("js-chart-info"));
+        assert!(dash.contains("host_hostname"));
+        assert!(dash.contains("stat-actions"));
         assert!(dash.contains("js-traf-period"));
         assert!(dash.contains("cpu-chart"));
         assert!(dash.contains("io-chart"));

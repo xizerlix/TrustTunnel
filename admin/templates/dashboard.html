@@ -34,6 +34,16 @@
   </div>
 </div>
 
+<div id="chart-help-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+      <h2 class="font-semibold text-sm">{{ t.chart_help_title }}</h2>
+      <button type="button" id="chart-help-close" class="text-slate-500 text-sm">{{ t.close }}</button>
+    </div>
+    <div class="chart-help-body p-4 text-sm text-slate-700">{{ t.chart_help }}</div>
+  </div>
+</div>
+
 <div id="dash-i18n" class="hidden"
      data-reboot-confirm="{{ t.reboot_confirm }}"
      data-geo-loading="{{ t.geo_loading }}"
@@ -85,7 +95,7 @@
         var saved = {};
         for (var i = 0; i < ids.length; i++) {
           var n = document.getElementById(ids[i]);
-          saved[ids[i]] = n ? n.innerHTML : '';
+          saved[ids[i]] = n ? n.innerHTML.replace(/is-pick/g, '') : '';
         }
         root.innerHTML = html;
         for (var j = 0; j < ids.length; j++) {
@@ -174,6 +184,13 @@
     var periodBtn = t.closest('.js-dest-period');
     if (periodBtn && destUser !== null) {
       openDest(destUser, periodBtn.getAttribute('data-period') || 'hour');
+      return;
+    }
+    var infoBtn = t.closest('.js-chart-info');
+    if (infoBtn) {
+      var help = document.getElementById('chart-help-modal');
+      if (help) help.classList.remove('hidden');
+      return;
     }
   });
 
@@ -397,7 +414,7 @@
   function drawTraf(el, points, period, color, kind) {
     if (!el) return;
     if (!points.length) {
-      el.innerHTML = '<p class="traf-empty">' + escapeHtml(i18n.getAttribute('data-traf-empty') || '') + '</p>';
+      el.innerHTML = '<p class="traf-empty">' + escapeHtml(i18n.getAttribute('data-traf-empty') || '') + '</p><div class="traf-readout">&nbsp;</div>';
       return;
     }
     var w = 360;
@@ -433,8 +450,10 @@
       var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
       hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
+    var last = points[points.length - 1];
+    var latestTip = fmtTrafTime(last.t, period) + ' · ' + (kind === 'pct' ? fmtPctMilli(ptVal(last)) : fmtTrafBytes(ptVal(last)));
     html += hits + '</svg><div class="traf-hair"></div></div>';
-    html += '<div class="traf-readout"></div><div class="traf-axis">';
+    html += '<div class="traf-readout" data-latest="' + escapeHtml(latestTip) + '">' + escapeHtml(latestTip) + '</div><div class="traf-axis">';
     var labels = trafAxisLabels(period);
     for (var k = 0; k < labels.length; k++) {
       html += '<span>' + labels[k] + '</span>';
@@ -444,8 +463,14 @@
   }
 
   var trafTip = document.getElementById('traf-tip');
+  var activePlot = null;
+  function readoutOf(plot) {
+    return plot.parentElement && plot.parentElement.querySelector('.traf-readout');
+  }
   function pickChart(plot, clientX, clientY) {
-    if (!trafTip || !plot) return;
+    if (!plot) return;
+    if (activePlot && activePlot !== plot) hideChartPick(activePlot);
+    activePlot = plot;
     var hits = plot.querySelectorAll('.traf-hit');
     if (!hits.length) return;
     var rect = plot.getBoundingClientRect();
@@ -453,43 +478,39 @@
     var i = Math.max(0, Math.min(hits.length - 1, Math.floor(frac * hits.length)));
     var hit = hits[i];
     var tip = hit.getAttribute('data-tip') || '';
-    var readout = plot.parentElement && plot.parentElement.querySelector('.traf-readout');
+    var readout = readoutOf(plot);
     if (readout) readout.textContent = tip;
     var hair = plot.querySelector('.traf-hair');
-    if (hair) {
-      hair.style.left = ((i + 0.5) / hits.length * 100) + '%';
-      hair.classList.add('is-on');
-    }
+    if (hair) hair.style.left = ((i + 0.5) / hits.length * 100) + '%';
     plot.classList.add('is-pick');
-    trafTip.textContent = tip;
-    trafTip.classList.remove('hidden');
-    var x = clientX + 12;
-    var y = clientY - 40;
-    var tw = trafTip.offsetWidth || 140;
-    var th = trafTip.offsetHeight || 32;
-    if (x + tw > window.innerWidth - 8) x = clientX - tw - 12;
-    if (y < 8) y = clientY + 16;
-    if (y + th > window.innerHeight - 8) y = window.innerHeight - th - 8;
-    trafTip.style.left = x + 'px';
-    trafTip.style.top = y + 'px';
+    if (trafTip) trafTip.classList.add('hidden');
   }
-
+  function hideChartPick(plot) {
+    if (!plot) return;
+    plot.classList.remove('is-pick');
+    var readout = readoutOf(plot);
+    if (readout) readout.textContent = readout.getAttribute('data-latest') || readout.textContent;
+    if (activePlot === plot) activePlot = null;
+    if (trafTip) trafTip.classList.add('hidden');
+  }
+  document.addEventListener('pointermove', function (e) {
+    var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
+    if (plot) {
+      pickChart(plot, e.clientX, e.clientY);
+      return;
+    }
+    if (activePlot) hideChartPick(activePlot);
+  });
   document.addEventListener('pointerdown', function (e) {
     var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
-    if (!plot) {
-      if (e.pointerType === 'touch' && trafTip) trafTip.classList.add('hidden');
-      return;
-    }
-    pickChart(plot, e.clientX, e.clientY);
+    if (plot) pickChart(plot, e.clientX, e.clientY);
   });
-  document.addEventListener('pointermove', function (e) {
-    if (!trafTip) return;
-    var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
-    if (!plot) {
-      if (e.pointerType !== 'touch') trafTip.classList.add('hidden');
-      return;
-    }
-    pickChart(plot, e.clientX, e.clientY);
+  document.addEventListener('pointerup', function (e) {
+    if (e.pointerType === 'mouse') return;
+    if (activePlot) hideChartPick(activePlot);
+  });
+  document.addEventListener('pointercancel', function () {
+    if (activePlot) hideChartPick(activePlot);
   });
 
   markTrafPeriod();
@@ -508,6 +529,18 @@
   destModal.addEventListener('click', function (e) {
     if (e.target === destModal) destModal.classList.add('hidden');
   });
+  var chartHelp = document.getElementById('chart-help-modal');
+  var chartHelpClose = document.getElementById('chart-help-close');
+  if (chartHelpClose) {
+    chartHelpClose.addEventListener('click', function () {
+      chartHelp.classList.add('hidden');
+    });
+  }
+  if (chartHelp) {
+    chartHelp.addEventListener('click', function (e) {
+      if (e.target === chartHelp) chartHelp.classList.add('hidden');
+    });
+  }
 })();
 </script>
 {% endblock %}

@@ -463,6 +463,10 @@ pub fn parse_host_snapshot() -> HostSnapshot {
         cpu_milli: cpu_busy_milli(),
         ram_milli: (ram_pct.clamp(0.0, 100.0) * 1000.0).round() as u32,
         io_bytes: disk_io_bytes(),
+        hostname: read_hostname(),
+        cores: cpu_count().max(1.0) as u32,
+        ram_total: ram_total_label(),
+        disk_size: df_field(1),
     }
 }
 
@@ -488,6 +492,10 @@ pub struct HostSnapshot {
     pub cpu_milli: u32,
     pub ram_milli: u32,
     pub io_bytes: u64,
+    pub hostname: String,
+    pub cores: u32,
+    pub ram_total: String,
+    pub disk_size: String,
 }
 
 pub fn parse_pct(s: &str) -> f64 {
@@ -655,7 +663,34 @@ fn disk_io_bytes() -> u64 {
     total
 }
 
-fn read_disk() -> String {
+fn ram_total_label() -> String {
+    let (total, _) = meminfo_kb();
+    if total == 0 {
+        return "—".into();
+    }
+    let mb = total as f64 / 1024.0;
+    if mb >= 1024.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else {
+        format!("{:.0} MB", mb)
+    }
+}
+
+fn read_hostname() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            std::env::var("HOSTNAME")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "—".into())
+}
+
+fn df_field(idx: usize) -> String {
     let out = std::process::Command::new("df")
         .args(["-h", "/"])
         .output()
@@ -666,9 +701,13 @@ fn read_disk() -> String {
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .nth(1)
-        .and_then(|l| l.split_whitespace().nth(4))
+        .and_then(|l| l.split_whitespace().nth(idx))
         .unwrap_or("—")
         .to_string()
+}
+
+fn read_disk() -> String {
+    df_field(4)
 }
 
 fn read_host_uptime() -> String {
