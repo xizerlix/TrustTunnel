@@ -89,16 +89,21 @@ async fn serve(
         log::info!("admin login Telegram alerts off (no bot_listener TOKEN/chat)");
     }
 
+    let paths = Arc::new(paths);
+    let series = Arc::new(crate::traffic_series::SeriesStore::new(
+        crate::traffic_series::series_path(&paths.root),
+    ));
     let state = AppState {
         config,
         bcrypt_hash,
-        paths: Arc::new(paths),
+        paths,
         sessions: SessionStore::new(),
         login_limiter: LoginLimiter::new(),
         secure_cookies,
         live: Arc::new(crate::live::LiveCache::new()),
         slow: crate::state::SlowInfo::new(),
         telegram,
+        series,
     };
 
     spawn_cleanup(state.clone());
@@ -117,24 +122,28 @@ async fn serve(
 
 fn spawn_cleanup(state: AppState) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        let mut ticks: u32 = 0;
         loop {
             interval.tick().await;
-            let ttl = Duration::from_secs(state.config.session_ttl_secs);
-            state.sessions.cleanup_expired(ttl).await;
-            state.login_limiter.cleanup_expired().await;
+            ticks = ticks.saturating_add(1);
+            if ticks % 6 == 0 {
+                let ttl = Duration::from_secs(state.config.session_ttl_secs);
+                state.sessions.cleanup_expired(ttl).await;
+                state.login_limiter.cleanup_expired().await;
+            }
             let root = state.paths.root.clone();
+            let series = state.series.clone();
             tokio::task::spawn_blocking(move || {
                 let (inn, out) = crate::handlers::dashboard::usage_file_totals(&root);
-                let host = crate::live::parse_host_snapshot();
-                crate::traffic_series::record(
-                    &crate::traffic_series::series_path(&root),
+                let (cpu, ram, io) = crate::live::series_gauges();
+                series.record(
                     chrono::Local::now().timestamp(),
                     inn,
                     out,
-                    host.cpu_milli,
-                    host.ram_milli,
-                    host.io_bytes,
+                    cpu,
+                    ram,
+                    io,
                 );
             })
             .await

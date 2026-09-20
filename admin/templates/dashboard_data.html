@@ -14,6 +14,12 @@
         {% if let Some(u) = since_label %} {{ u }}{% else %} — {{ t.unknown }}{% endif %}
       </div>
     {% endif %}
+    <button type="button" class="js-dest-all stat-btn-dest">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
+      </svg>
+      {{ t.dest_title }}
+    </button>
     <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
       {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
     </button>
@@ -57,28 +63,22 @@
       <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="day">{{ t.traf_day }}</button>
       <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.traf_week }}</button>
     </div>
-    <button type="button" class="js-dest-all inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-slate-100 text-indigo-600">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
-      </svg>
-      {{ t.dest_title }}
-    </button>
   </div>
   <div class="chart-grid">
     <section class="chart-cell">
-      <div class="chart-title">{{ t.cpu }}</div>
+      <div class="chart-title chart-title-cpu">{{ t.cpu }}</div>
       <div id="cpu-chart" class="traf-chart"></div>
     </section>
     <section class="chart-cell">
-      <div class="chart-title">{{ t.ram }}</div>
+      <div class="chart-title chart-title-ram">{{ t.ram }}</div>
       <div id="ram-chart" class="traf-chart"></div>
     </section>
     <section class="chart-cell">
-      <div class="chart-title">{{ t.io }}</div>
+      <div class="chart-title chart-title-io">{{ t.io }}</div>
       <div id="io-chart" class="traf-chart"></div>
     </section>
     <section class="chart-cell">
-      <div class="chart-title">{{ t.traffic_period }}
+      <div class="chart-title chart-title-traf">{{ t.traffic_period }}
         <span class="chart-totals">↑ {{ traffic_outbound_h }} · ↓ {{ traffic_inbound_h }} · Σ {{ traffic_total_h }}</span>
       </div>
       <div id="traf-chart" class="traf-chart"></div>

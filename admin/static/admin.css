@@ -240,10 +240,33 @@ textarea:focus {
 .traf-plot {
   width: 100%;
   height: 3.15rem;
+  position: relative;
+  touch-action: none;
 }
 .traf-svg { width: 100%; height: 100%; display: block; }
 .traf-bar { pointer-events: none; }
 .traf-hit { cursor: crosshair; }
+.traf-hair {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #0f172a;
+  pointer-events: none;
+  z-index: 2;
+}
+.traf-hair.is-on,
+.traf-plot.is-pick .traf-hair { display: block; }
+.traf-readout {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  min-height: 1.15em;
+  margin-top: 0.1rem;
+  font-variant-numeric: tabular-nums;
+}
 .traf-axis {
   display: flex;
   justify-content: space-between;
@@ -259,10 +282,10 @@ textarea:focus {
   pointer-events: none;
   background: #0f172a;
   color: #fff;
-  font-size: 0.75rem;
-  line-height: 1.2;
-  padding: 0.3rem 0.45rem;
-  border-radius: 0.35rem;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.4rem;
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
 }
@@ -336,15 +359,36 @@ textarea:focus {
   flex-direction: column;
   gap: 0.45rem;
 }
+.stat-btn-dest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  margin-bottom: 0.15rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 0.3rem;
+  border: 0;
+  cursor: pointer;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.stat-btn-dest:hover { background: #e0e7ff; }
 .chart-title {
-  font-size: 0.7rem;
-  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.5rem;
 }
-.chart-totals { font-size: 0.65rem; color: #334155; }
+.chart-title-cpu { color: #b45309; }
+.chart-title-ram { color: #047857; }
+.chart-title-io { color: #6d28d9; }
+.chart-title-traf { color: #312e81; }
+.chart-totals { font-size: 0.7rem; font-weight: 600; color: #1e293b; }
 #dest-modal-body { min-height: 10rem; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; }
 .tag-pill {

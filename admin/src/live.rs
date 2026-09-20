@@ -449,7 +449,7 @@ pub fn parse_host_snapshot() -> HostSnapshot {
     } else {
         0.0
     };
-    let ram_pct = parse_pct(&ram);
+    let ram_pct = ram_used_pct();
     let disk_pct = parse_pct(&disk);
     HostSnapshot {
         load,
@@ -460,10 +460,19 @@ pub fn parse_host_snapshot() -> HostSnapshot {
         load_color: heat_color(load_pct),
         ram_color: heat_color(ram_pct),
         disk_color: heat_color(disk_pct),
-        cpu_milli: (load_pct * 1000.0).round().clamp(0.0, 100_000.0) as u32,
+        cpu_milli: cpu_busy_milli(),
         ram_milli: (ram_pct.clamp(0.0, 100.0) * 1000.0).round() as u32,
         io_bytes: disk_io_bytes(),
     }
+}
+
+pub fn series_gauges() -> (u32, u32, u64) {
+    let ram_pct = ram_used_pct();
+    (
+        cpu_busy_milli(),
+        (ram_pct.clamp(0.0, 100.0) * 1000.0).round() as u32,
+        disk_io_bytes(),
+    )
 }
 
 #[derive(Clone, Default)]
@@ -520,6 +529,47 @@ fn cpu_count() -> f64 {
         .unwrap_or(1.0)
 }
 
+static CPU_PREV: Mutex<Option<(u64, u64)>> = Mutex::new(None);
+
+pub fn parse_proc_stat_cpu(stat: &str) -> Option<(u64, u64)> {
+    let line = stat.lines().next().unwrap_or(stat);
+    let mut it = line.split_whitespace();
+    if it.next() != Some("cpu") {
+        return None;
+    }
+    let nums: Vec<u64> = it.filter_map(|x| x.parse().ok()).collect();
+    if nums.len() < 4 {
+        return None;
+    }
+    let idle = nums[3].saturating_add(nums.get(4).copied().unwrap_or(0));
+    let total: u64 = nums.iter().sum();
+    Some((total.saturating_sub(idle), total))
+}
+
+fn cpu_busy_milli() -> u32 {
+    let Ok(text) = std::fs::read_to_string("/proc/stat") else {
+        return 0;
+    };
+    let Some((busy, total)) = parse_proc_stat_cpu(&text) else {
+        return 0;
+    };
+    let mut prev = CPU_PREV.lock().unwrap_or_else(|p| p.into_inner());
+    let milli = match *prev {
+        Some((pb, pt)) if total > pt => {
+            let db = busy.saturating_sub(pb) as f64;
+            let dt = total.saturating_sub(pt) as f64;
+            if dt <= 0.0 {
+                0
+            } else {
+                ((db / dt) * 100_000.0).round().clamp(0.0, 100_000.0) as u32
+            }
+        }
+        _ => 0,
+    };
+    *prev = Some((busy, total));
+    milli
+}
+
 fn read_load() -> String {
     std::fs::read_to_string("/proc/loadavg")
         .ok()
@@ -527,9 +577,9 @@ fn read_load() -> String {
         .unwrap_or_else(|| "—".into())
 }
 
-fn read_ram() -> String {
+fn meminfo_kb() -> (u64, u64) {
     let Ok(s) = std::fs::read_to_string("/proc/meminfo") else {
-        return "—".into();
+        return (0, 0);
     };
     let mut total = 0u64;
     let mut avail = 0u64;
@@ -541,11 +591,24 @@ fn read_ram() -> String {
             _ => {}
         }
     }
+    (total, avail)
+}
+
+fn ram_used_pct() -> f64 {
+    let (total, avail) = meminfo_kb();
+    if total == 0 {
+        return 0.0;
+    }
+    (total.saturating_sub(avail) as f64 / total as f64) * 100.0
+}
+
+fn read_ram() -> String {
+    let (total, avail) = meminfo_kb();
     if total == 0 {
         return "—".into();
     }
     let used = total.saturating_sub(avail);
-    let pct = (used as f64 / total as f64) * 100.0;
+    let pct = used as f64 / total as f64 * 100.0;
     format!(
         "{:.0}% ({:.0}/{:.0} MB)",
         pct,
@@ -731,6 +794,13 @@ mod tests {
     fn block_stat_read_write_sectors() {
         assert_eq!(parse_block_stat("10 0 2 0 4 0 6 0"), 8 * 512);
         assert_eq!(parse_block_stat("1 2"), 0);
+    }
+
+    #[test]
+    fn proc_stat_busy_excludes_idle() {
+        let (busy, total) = parse_proc_stat_cpu("cpu  10 0 10 80 0 0 0 0").unwrap();
+        assert_eq!(total, 100);
+        assert_eq!(busy, 20);
     }
 
     #[test]

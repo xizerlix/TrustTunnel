@@ -771,17 +771,6 @@ async fn collect(state: &AppState) -> Stats {
     let (host, cert) = state.slow.host_and_cert(cert_path.as_deref());
     let (cert_subject, cert_expiry) = cert.unwrap_or_else(|| (String::new(), String::new()));
 
-    let series_path = crate::traffic_series::series_path(&state.paths.root);
-    crate::traffic_series::record(
-        &series_path,
-        chrono::Local::now().timestamp(),
-        total_in,
-        total_out,
-        host.cpu_milli,
-        host.ram_milli,
-        host.io_bytes,
-    );
-
     Stats {
         service_active: svc.active,
         service_label: svc.label,
@@ -979,9 +968,9 @@ pub async fn traffic_series(
     Query(q): Query<TrafQuery>,
 ) -> Response {
     let period = crate::traffic_series::TrafPeriod::parse(&q.period);
-    let path = crate::traffic_series::series_path(&state.paths.root);
+    let series = state.series.clone();
     let now = chrono::Local::now().timestamp();
-    let set = tokio::task::spawn_blocking(move || crate::traffic_series::chart(&path, period, now))
+    let set = tokio::task::spawn_blocking(move || series.chart(period, now))
         .await
         .unwrap_or_default();
     Json(TrafJson {

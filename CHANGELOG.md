@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin charts sample ~10s in memory (CPU from /proc/stat peaks)
+  without rewriting the JSON every tick; Top domains sits on the service
+  card; tap shows a readout on mobile; series titles are high-contrast.
 - [Fix] Admin host/CPU/RAM/I/O/traffic charts stack with a time axis under
   each plot; host card shows uptime on its own line and a Certificate label.
 - [Feature] Admin dashboard compact status row plus CPU / RAM / disk I/O

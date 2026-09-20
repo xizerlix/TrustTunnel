@@ -242,18 +242,22 @@ protocol/deep-link format, library API) when relevant.
    day*24+hour), never via saturating subtraction (day ids looked like
    "this hour" and cloned Today).
    Admin traffic chart bars are inbound+outbound byte deltas per bucket
-   (60s last hour, 15min last day, 1h last week). CPU and RAM charts use
-   the same buckets, scale to 100%, and store milli-percent in
-   `traffic_series.json`. Disk I/O bars are byte deltas from `/sys/block`
-   (skip loop/ram/sr/dm). Charts MUST stack vertically, each with its own
-   X axis at window quarters (hour: 0 15 30 45 60). Hover MUST show local
-   clock time and the series unit (bytes 1024, or percent). Do not label Y.
+   (10s last hour, 5min last day, 15min last week). Sample host gauges
+   about every 10s in memory; persist `traffic_series.json` about every
+   50s and coarsen samples older than 2h to 60s so disk I/O stays low.
+   CPU milli-percent MUST come from `/proc/stat` busy delta (not 1-min
+   loadavg) and buckets MUST keep the peak in the interval. RAM/I/O use
+   the same timestamps. Charts MUST stack vertically, each with its own
+   X axis at window quarters (hour: 0 15 30 45 60). Hover and touch MUST
+   show local clock time and the series unit (bytes 1024, or percent),
+   with a readout under the plot on tap. Do not label Y.
+   Top domains control lives on the service card, above restart.
    Dashboard poll MUST keep existing chart SVGs (`#cpu-chart`,
    `#ram-chart`, `#io-chart`, `#traf-chart`); do not wipe then refetch.
    Dest modal period/user switches MUST keep the previous list until the
    new rows arrive — no loading placeholder that collapses the card.
    Admin dashboard SHOULD sample total traffic, CPU, RAM, and disk I/O
-   about once a minute into `traffic_series.json` and chart hour/day/week.
+   about every 10s (flush to `traffic_series.json` about once a minute).
    User notes/tags live on `[[client]]` (`note`, `tags`); the users page
    edits them and the dashboard shows them. Endpoint ignores unknown keys.
    Dashboard per-user lock MUST write `disabled = true` on the matching

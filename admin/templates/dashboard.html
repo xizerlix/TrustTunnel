@@ -363,19 +363,19 @@
     var d = new Date(ts * 1000);
     var hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     if (period === 'week') {
-      var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var endw = new Date((ts + 15 * 60) * 1000);
+      var range = hm + '–' + pad2(endw.getHours()) + ':' + pad2(endw.getMinutes());
       try {
-        days = d.toLocaleDateString(undefined, { weekday: 'short' });
-        return days + ' ' + hm;
+        return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + range;
       } catch (e) {
-        return hm;
+        return range;
       }
     }
     if (period === 'day') {
-      var end = new Date((ts + 15 * 60) * 1000);
+      var end = new Date((ts + 5 * 60) * 1000);
       return hm + '–' + pad2(end.getHours()) + ':' + pad2(end.getMinutes());
     }
-    return hm;
+    return hm + ':' + pad2(d.getSeconds());
   }
 
   function trafAxisLabels(period) {
@@ -433,7 +433,8 @@
       var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
       hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
-    html += hits + '</svg></div><div class="traf-axis">';
+    html += hits + '</svg><div class="traf-hair"></div></div>';
+    html += '<div class="traf-readout"></div><div class="traf-axis">';
     var labels = trafAxisLabels(period);
     for (var k = 0; k < labels.length; k++) {
       html += '<span>' + labels[k] + '</span>';
@@ -443,28 +444,57 @@
   }
 
   var trafTip = document.getElementById('traf-tip');
-  document.addEventListener('pointermove', function (e) {
-    if (!trafTip) return;
-    var hit = e.target && e.target.closest && e.target.closest('.traf-hit');
-    if (!hit) {
-      trafTip.classList.add('hidden');
-      return;
+  function pickChart(plot, clientX, clientY) {
+    if (!trafTip || !plot) return;
+    var hits = plot.querySelectorAll('.traf-hit');
+    if (!hits.length) return;
+    var rect = plot.getBoundingClientRect();
+    var frac = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    var i = Math.max(0, Math.min(hits.length - 1, Math.floor(frac * hits.length)));
+    var hit = hits[i];
+    var tip = hit.getAttribute('data-tip') || '';
+    var readout = plot.parentElement && plot.parentElement.querySelector('.traf-readout');
+    if (readout) readout.textContent = tip;
+    var hair = plot.querySelector('.traf-hair');
+    if (hair) {
+      hair.style.left = ((i + 0.5) / hits.length * 100) + '%';
+      hair.classList.add('is-on');
     }
-    trafTip.textContent = hit.getAttribute('data-tip') || '';
+    plot.classList.add('is-pick');
+    trafTip.textContent = tip;
     trafTip.classList.remove('hidden');
-    var x = e.clientX + 12;
-    var y = e.clientY + 12;
-    var tw = trafTip.offsetWidth || 120;
-    var th = trafTip.offsetHeight || 28;
-    if (x + tw > window.innerWidth - 8) x = e.clientX - tw - 12;
-    if (y + th > window.innerHeight - 8) y = e.clientY - th - 12;
+    var x = clientX + 12;
+    var y = clientY - 40;
+    var tw = trafTip.offsetWidth || 140;
+    var th = trafTip.offsetHeight || 32;
+    if (x + tw > window.innerWidth - 8) x = clientX - tw - 12;
+    if (y < 8) y = clientY + 16;
+    if (y + th > window.innerHeight - 8) y = window.innerHeight - th - 8;
     trafTip.style.left = x + 'px';
     trafTip.style.top = y + 'px';
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
+    if (!plot) {
+      if (e.pointerType === 'touch' && trafTip) trafTip.classList.add('hidden');
+      return;
+    }
+    pickChart(plot, e.clientX, e.clientY);
+  });
+  document.addEventListener('pointermove', function (e) {
+    if (!trafTip) return;
+    var plot = e.target && e.target.closest && e.target.closest('.traf-plot');
+    if (!plot) {
+      if (e.pointerType !== 'touch') trafTip.classList.add('hidden');
+      return;
+    }
+    pickChart(plot, e.clientX, e.clientY);
   });
 
   markTrafPeriod();
   loadTraf();
-  setInterval(loadTraf, 60000);
+  setInterval(loadTraf, 20000);
 
   document.getElementById('ip-modal-close').addEventListener('click', function () {
     modal.classList.add('hidden');

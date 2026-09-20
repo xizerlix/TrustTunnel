@@ -18,6 +18,7 @@ pub struct AppState {
     pub live: Arc<LiveCache>,
     pub slow: Arc<SlowInfo>,
     pub telegram: Option<Telegram>,
+    pub series: Arc<crate::traffic_series::SeriesStore>,
 }
 
 pub struct SlowInfo {
