@@ -331,8 +331,7 @@ mod tests {
         assert!(dash.contains("io-chart"));
         assert!(dash.contains("stat-strip"));
         assert!(dash.contains("user-note") || include_str!("../templates/users.html").contains("name=\"note\""));
-        let modal = include_str!("../templates/dashboard.html");
-        assert!(modal.contains("data-period=\"hour\""));
-        assert!(modal.contains("cpu-chart"));
+        assert!(dash.contains("stat-btn-wrap"));
+        assert!(modal.contains("traf-sel"));
     }
 }

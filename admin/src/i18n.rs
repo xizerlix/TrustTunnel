@@ -319,7 +319,7 @@ pub const EN: I18n = I18n {
     traf_week: "Week",
     traf_empty: "Graph fills as samples arrive (about every 10 seconds).",
     chart_help_title: "How these charts work",
-    chart_help: "CPU — share of time the processor was not idle, 0–100%. Not load average. Sampled from /proc/stat about every 10 seconds; each bar is the peak in that slice.\n\nRAM — physical memory in use (total minus available), 0–100%. Peak in the same slice.\n\nDisk I/O — bytes the disks read and wrote in that slice (not how full the disk is). Units B, KB, MB, GB (base 1024).\n\nTraffic — VPN bytes in plus out in that slice. Same units.\n\nHour: one bar = 10 seconds (0…60 are minutes from the left). Day: 5 minutes. Week: 15 minutes.",
+    chart_help: "CPU — share of time the processor was not idle, 0–100%. Not load average. Sampled from /proc/stat about every 10 seconds; each bar is the peak in that slice.\n\nRAM — physical memory in use (total minus available), 0–100%. Peak in the same slice.\n\nDisk I/O — bytes the disks read and wrote in that slice (not how full the disk is). Units B, KB, MB, GB (base 1024).\n\nTraffic — VPN bytes in plus out in that slice. Same units.\n\nThe line under each chart is always the latest slice. Dragging across bars shows that slice; the hairline goes away when the pointer or finger leaves the plot.\n\nHour: one bar = 10 seconds (0…60 are minutes from the left). Day: 5 minutes. Week: 15 minutes.",
 };
 
 pub const RU: I18n = I18n {

@@ -434,25 +434,34 @@
     var inner = w - padL - padR;
     var bw = inner / points.length;
     var plotH = h - padT - padB;
-    var html = '<div class="traf-plot"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" class="traf-svg">';
+    var html = '<div class="traf-plot" data-vb="' + w + '" data-pad="' + padL + '" data-bw="' + bw + '"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" class="traf-svg">';
     var hits = '';
     for (j = 0; j < points.length; j++) {
       var x = padL + j * bw;
       var rw = Math.max(0.6, bw - 0.35);
       var val = ptVal(points[j]);
+      var bh = 0;
+      var y = padT + plotH;
       if (val > 0) {
-        var bh = Math.max(1.2, (val / max) * plotH);
+        bh = Math.max(1.5, (val / max) * plotH);
         if (bh > plotH) bh = plotH;
-        var y = padT + plotH - bh;
+        y = padT + plotH - bh;
         html += '<rect class="traf-bar" x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + rw.toFixed(2) + '" height="' + bh.toFixed(2) + '" fill="' + color + '" rx="0.6"/>';
+      }
+      var barY = y;
+      var barH = bh;
+      if (barH <= 0) {
+        barY = padT;
+        barH = plotH;
       }
       var shown = kind === 'pct' ? fmtPctMilli(val) : fmtTrafBytes(val);
       var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
-      hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" data-x="' + xPct.toFixed(3) + '" data-w="' + wPct.toFixed(3) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
+      hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" data-bx="' + x.toFixed(2) + '" data-by="' + barY.toFixed(2) + '" data-bw="' + rw.toFixed(2) + '" data-bh="' + barH.toFixed(2) + '" x="' + x.toFixed(2) + '" y="0" width="' + bw.toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
     var last = points[points.length - 1];
     var latestTip = fmtTrafTime(last.t, period) + ' · ' + (kind === 'pct' ? fmtPctMilli(ptVal(last)) : fmtTrafBytes(ptVal(last)));
-    html += hits + '</svg><div class="traf-hair"></div></div>';
+    html += '<rect class="traf-sel" visibility="hidden" pointer-events="none" fill="#0f172a" fill-opacity="0.38"/>';
+    html += hits + '</svg></div>';
     html += '<div class="traf-readout" data-latest="' + escapeHtml(latestTip) + '">' + escapeHtml(latestTip) + '</div><div class="traf-axis">';
     var labels = trafAxisLabels(period);
     for (var k = 0; k < labels.length; k++) {
@@ -474,16 +483,23 @@
     var hits = plot.querySelectorAll('.traf-hit');
     if (!hits.length) return;
     var rect = plot.getBoundingClientRect();
-    var frac = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
-    var i = Math.max(0, Math.min(hits.length - 1, Math.floor(frac * hits.length)));
+    var vb = parseFloat(plot.getAttribute('data-vb') || '360');
+    var pad = parseFloat(plot.getAttribute('data-pad') || '0');
+    var bw = parseFloat(plot.getAttribute('data-bw') || '1');
+    var svgX = rect.width > 0 ? ((clientX - rect.left) / rect.width) * vb : 0;
+    var i = Math.floor((svgX - pad) / bw);
+    i = Math.max(0, Math.min(hits.length - 1, i));
     var hit = hits[i];
     var tip = hit.getAttribute('data-tip') || '';
     var readout = readoutOf(plot);
     if (readout) readout.textContent = tip;
-    var hair = plot.querySelector('.traf-hair');
-    if (hair) {
-      hair.style.left = (hit.getAttribute('data-x') || '0') + '%';
-      hair.style.width = (hit.getAttribute('data-w') || '0.4') + '%';
+    var sel = plot.querySelector('.traf-sel');
+    if (sel) {
+      sel.setAttribute('x', hit.getAttribute('data-bx') || '0');
+      sel.setAttribute('y', hit.getAttribute('data-by') || '0');
+      sel.setAttribute('width', hit.getAttribute('data-bw') || '1');
+      sel.setAttribute('height', hit.getAttribute('data-bh') || '1');
+      sel.setAttribute('visibility', 'visible');
     }
     plot.classList.add('is-pick');
     if (trafTip) trafTip.classList.add('hidden');
@@ -491,6 +507,8 @@
   function hideChartPick(plot) {
     if (!plot) return;
     plot.classList.remove('is-pick');
+    var sel = plot.querySelector('.traf-sel');
+    if (sel) sel.setAttribute('visibility', 'hidden');
     var readout = readoutOf(plot);
     if (readout) readout.textContent = readout.getAttribute('data-latest') || readout.textContent;
     if (activePlot === plot) activePlot = null;

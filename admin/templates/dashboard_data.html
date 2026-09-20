@@ -15,15 +15,19 @@
       </div>
     {% endif %}
     <div class="stat-actions">
-      <button type="button" class="js-dest-all stat-btn-dest">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
-        </svg>
-        {{ t.dest_title }}
-      </button>
-      <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
-        {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
-      </button>
+      <div class="stat-btn-wrap">
+        <button type="button" class="js-dest-all stat-btn-dest">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
+          </svg>
+          {{ t.dest_title }}
+        </button>
+      </div>
+      <div class="stat-btn-wrap">
+        <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
+          {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
+        </button>
+      </div>
     </div>
   </div>
   <div class="stat-card">
