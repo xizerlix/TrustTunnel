@@ -331,7 +331,13 @@ mod tests {
         assert!(dash.contains("io-chart"));
         assert!(dash.contains("stat-strip"));
         assert!(dash.contains("user-note") || include_str!("../templates/users.html").contains("name=\"note\""));
-        assert!(dash.contains("stat-btn-wrap"));
-        assert!(modal.contains("traf-sel"));
+        assert!(dash.contains("stat-actions"));
+        assert!(dash.contains("stat-btn-dest"));
+        let charts = include_str!("../templates/dashboard.html");
+        assert!(charts.contains("traf-sel"));
+        assert!(charts.contains("var x = padL + j * bw"));
+        assert!(charts.contains("bw - 0.35"));
+        assert!(charts.contains("plot.querySelector('.traf-sel')"));
+        assert!(!charts.contains("xPct"));
     }
 }

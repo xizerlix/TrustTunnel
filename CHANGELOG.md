@@ -8,12 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- [Fix] Chart highlight is an SVG overlay on the bar (same x/width);
-  service buttons sit in shrink-wraps so they no longer stretch.
-- [Fix] Service Top domains and restart buttons match Reboot host: content
-  width, left-aligned (not stretched across the card).
-- [Fix] Admin chart hairline covers the selected bar, not the gap between
-  bars.
+- [Fix] Admin dashboard charts match the 1.1.20 bar layout; the highlight
+  is an SVG overlay on the bar (same x/width), not a line in the gap.
+  Service Top domains / restart keep the 1.1.21 content-width buttons.
 - [Fix] Service card stacks Top domains above restart; chart hairline
   hides when pointer or finger leaves; readout stays reserved with the
   latest sample; host card shows hardware specs; charts have an info

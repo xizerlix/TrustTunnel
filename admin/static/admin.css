@@ -352,28 +352,21 @@ textarea:focus {
   gap: 0.45rem;
 }
 .stat-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   margin-top: 0.35rem;
 }
-.stat-btn-wrap {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-}
-.stat-btn-wrap + .stat-btn-wrap {
-  margin-top: 0.35rem;
-}
-.stat-btn-wrap .stat-btn,
-.stat-btn-wrap .stat-btn-dest,
-.stat-card > .stat-btn {
+.stat-actions .stat-btn,
+.stat-actions .stat-btn-dest {
   display: inline-flex;
   align-items: center;
-  width: max-content !important;
-  max-width: 100%;
   margin-top: 0;
   margin-bottom: 0;
-}
-.stat-card > .stat-btn {
-  margin-top: 0.3rem;
+  width: auto;
+  box-sizing: border-box;
+  justify-content: flex-start;
 }
 .stat-btn-dest {
   display: inline-flex;
