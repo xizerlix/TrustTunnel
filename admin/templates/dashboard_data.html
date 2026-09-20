@@ -1,80 +1,93 @@
-<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-    <div class="text-sm text-slate-500">{{ t.service }}</div>
+<div class="stat-strip">
+  <div class="stat-card">
+    <div class="stat-label">{{ t.service }}</div>
     {% if service_active %}
-      <div class="text-2xl font-semibold mt-1 text-emerald-600">{{ service_label }}</div>
-      <div class="text-sm text-slate-600 mt-1">
+      <div class="stat-val text-emerald-600">{{ service_label }}</div>
+      <div class="stat-sub">
         {{ t.up }}
         {% if let Some(u) = since_label %} {{ u }}{% else %} — {{ t.unknown }}{% endif %}
       </div>
     {% else %}
-      <div class="text-2xl font-semibold mt-1 text-rose-600">{{ service_label }}</div>
-      <div class="text-sm text-slate-600 mt-1">
+      <div class="stat-val text-rose-600">{{ service_label }}</div>
+      <div class="stat-sub">
         {{ t.down }}
         {% if let Some(u) = since_label %} {{ u }}{% else %} — {{ t.unknown }}{% endif %}
       </div>
     {% endif %}
-    <button type="button" class="js-svc-restart mt-3 px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700">
+    <button type="button" class="js-svc-restart stat-btn stat-btn-ok">
       {% if service_active %}{{ t.restart_service }}{% else %}{{ t.start_service }}{% endif %}
     </button>
   </div>
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 sm:col-span-2 xl:col-span-1">
-    <div class="text-sm text-slate-500">{{ t.host }}</div>
-    <div class="text-lg font-semibold mt-1 break-all">{{ host_version }}</div>
-    <dl class="mt-2 text-xs space-y-0.5">
-      <div>{{ t.cpu }}: <span style="color: {{ host_load_color }}">{{ host_load }}</span></div>
-      <div>{{ t.ram }}: <span style="color: {{ host_ram_color }}">{{ host_ram }}</span></div>
-      <div>{{ t.disk }}: <span style="color: {{ host_disk_color }}">{{ host_disk }}</span></div>
-      <div class="text-slate-600">{{ t.host_uptime }}: {{ host_uptime }}</div>
-    </dl>
-    <button type="button" class="js-host-reboot mt-3 px-3 py-1.5 text-xs font-medium rounded bg-rose-600 text-white hover:bg-rose-700">{{ t.reboot_host }}</button>
-    <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600">
-      <div class="text-slate-500 mb-0.5">{{ t.certificates }}</div>
+  <div class="stat-card">
+    <div class="stat-label">{{ t.host }}</div>
+    <div class="stat-val stat-host">{{ host_version }}</div>
+    <div class="stat-metrics">
+      <span>{{ t.cpu }} <b style="color: {{ host_load_color }}">{{ host_load }}</b></span>
+      <span>{{ t.ram }} <b style="color: {{ host_ram_color }}">{{ host_ram }}</b></span>
+      <span>{{ t.disk }} <b style="color: {{ host_disk_color }}">{{ host_disk }}</b></span>
+      <span>{{ t.host_uptime }} {{ host_uptime }}</span>
+    </div>
+    <div class="stat-cert">
       {% if cert_subject.is_empty() %}
         {% if cert_expiry.is_empty() %}
-          <div class="text-slate-400">{{ t.cert_missing }}</div>
+          <span class="text-slate-400">{{ t.cert_missing }}</span>
         {% else %}
-          <div>{{ t.expires }} {{ cert_expiry }}</div>
+          {{ t.expires }} {{ cert_expiry }}
         {% endif %}
       {% else %}
-        <div class="font-medium break-all">{{ cert_subject }}</div>
-        <div class="text-slate-500">{{ t.expires }} {{ cert_expiry }}</div>
+        {{ cert_subject }} · {{ t.expires }} {{ cert_expiry }}
       {% endif %}
     </div>
+    <button type="button" class="js-host-reboot stat-btn stat-btn-danger">{{ t.reboot_host }}</button>
   </div>
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-    <div class="text-sm text-slate-500">{{ t.active_users_ips }}</div>
-    <div class="text-2xl font-semibold mt-1">{{ clients_count }} / {{ unique_ips }}</div>
+  <div class="stat-card">
+    <div class="stat-label">{{ t.active_users_ips }}</div>
+    <div class="stat-val">{{ clients_count }} / {{ unique_ips }}</div>
   </div>
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-    <div class="text-sm text-slate-500">{{ t.active_sessions }}</div>
-    <div class="text-2xl font-semibold mt-1">{{ session_total }}</div>
+  <div class="stat-card">
+    <div class="stat-label">{{ t.active_sessions }}</div>
+    <div class="stat-val">{{ session_total }}</div>
   </div>
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 sm:col-span-2 xl:col-span-4">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="text-sm text-slate-500">{{ t.traffic_period }}</div>
-      <div class="flex flex-wrap gap-1">
-        <button type="button" class="js-traf-period is-on px-2 py-1 text-xs rounded bg-slate-100" data-period="hour">{{ t.traf_hour }}</button>
-        <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="day">{{ t.traf_day }}</button>
-        <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.traf_week }}</button>
-      </div>
+</div>
+
+<div class="charts-card">
+  <div class="charts-toolbar">
+    <div class="flex flex-wrap gap-1">
+      <button type="button" class="js-traf-period is-on px-2 py-1 text-xs rounded bg-slate-100" data-period="hour">{{ t.traf_hour }}</button>
+      <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="day">{{ t.traf_day }}</button>
+      <button type="button" class="js-traf-period px-2 py-1 text-xs rounded bg-slate-100" data-period="week">{{ t.traf_week }}</button>
     </div>
-    <div class="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-lg">
-      <span>↑ {{ traffic_outbound_h }}</span>
-      <span>↓ {{ traffic_inbound_h }}</span>
-      <span class="text-slate-400">Σ {{ traffic_total_h }}</span>
-    </div>
-    <div id="traf-chart" class="traf-chart"></div>
-    <button type="button" class="js-dest-all mt-3 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-slate-100 text-indigo-600">
+    <button type="button" class="js-dest-all inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-slate-100 text-indigo-600">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M5 3h3v18H5V3zm6 8h3v10h-3V11zm6-4h3v14h-3V7z"/>
       </svg>
       {{ t.dest_title }}
     </button>
   </div>
+  <div class="chart-grid">
+    <section class="chart-cell">
+      <div class="chart-title">{{ t.cpu }}</div>
+      <div id="cpu-chart" class="traf-chart"></div>
+    </section>
+    <section class="chart-cell">
+      <div class="chart-title">{{ t.ram }}</div>
+      <div id="ram-chart" class="traf-chart"></div>
+    </section>
+    <section class="chart-cell">
+      <div class="chart-title">{{ t.io }}</div>
+      <div id="io-chart" class="traf-chart"></div>
+    </section>
+    <section class="chart-cell">
+      <div class="chart-title">{{ t.traffic_period }}
+        <span class="chart-totals">↑ {{ traffic_outbound_h }} · ↓ {{ traffic_inbound_h }} · Σ {{ traffic_total_h }}</span>
+      </div>
+      <div id="traf-chart" class="traf-chart"></div>
+    </section>
+  </div>
+  <div id="chart-axis" class="traf-axis"></div>
 </div>
 
-<h2 class="text-xl font-semibold mb-2">{{ t.per_user }}</h2>
+<h2 class="text-lg font-semibold mb-2">{{ t.per_user }}</h2>
 {% if users.is_empty() %}
   <div class="text-slate-500">{{ t.no_users }}</div>
 {% else %}

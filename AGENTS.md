@@ -241,8 +241,19 @@ protocol/deep-link format, library API) when relevant.
    Last hour MUST match stored hour ids exactly (unix hour or local
    day*24+hour), never via saturating subtraction (day ids looked like
    "this hour" and cloned Today).
-   Admin dashboard SHOULD sample total traffic about once a minute into
-   `traffic_series.json` and chart hour/day/week on the traffic card.
+   Admin traffic chart bars are inbound+outbound byte deltas per bucket
+   (60s last hour, 15min last day, 1h last week). CPU and RAM charts use
+   the same buckets, scale to 100%, and store milli-percent in
+   `traffic_series.json`. Disk I/O bars are byte deltas from `/sys/block`
+   (skip loop/ram/sr/dm). The X axis MUST be labeled once for the group
+   at window quarters. Hover MUST show local clock time and the series
+   unit (bytes 1024, or percent). Do not label Y.
+   Dashboard poll MUST keep existing chart SVGs (`#cpu-chart`,
+   `#ram-chart`, `#io-chart`, `#traf-chart`); do not wipe then refetch.
+   Dest modal period/user switches MUST keep the previous list until the
+   new rows arrive — no loading placeholder that collapses the card.
+   Admin dashboard SHOULD sample total traffic, CPU, RAM, and disk I/O
+   about once a minute into `traffic_series.json` and chart hour/day/week.
    User notes/tags live on `[[client]]` (`note`, `tags`); the users page
    edits them and the dashboard shows them. Endpoint ignores unknown keys.
    Dashboard per-user lock MUST write `disabled = true` on the matching

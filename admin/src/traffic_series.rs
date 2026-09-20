@@ -50,6 +50,12 @@ pub struct Sample {
     pub ts: i64,
     pub inbound: u64,
     pub outbound: u64,
+    #[serde(default)]
+    pub cpu_milli: u32,
+    #[serde(default)]
+    pub ram_milli: u32,
+    #[serde(default)]
+    pub io_bytes: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -61,14 +67,30 @@ struct File {
 #[derive(Clone, Debug, Serialize)]
 pub struct ChartPoint {
     pub t: i64,
-    pub bytes: u64,
+    pub v: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct ChartSet {
+    pub traffic: Vec<ChartPoint>,
+    pub cpu: Vec<ChartPoint>,
+    pub ram: Vec<ChartPoint>,
+    pub io: Vec<ChartPoint>,
 }
 
 pub fn series_path(root: &Path) -> PathBuf {
     root.join("traffic_series.json")
 }
 
-pub fn record(path: &Path, now: i64, inbound: u64, outbound: u64) {
+pub fn record(
+    path: &Path,
+    now: i64,
+    inbound: u64,
+    outbound: u64,
+    cpu_milli: u32,
+    ram_milli: u32,
+    io_bytes: u64,
+) {
     let mut file = load(path);
     if let Some(last) = file.samples.last() {
         if now.saturating_sub(last.ts) < MIN_GAP_SECS {
@@ -79,6 +101,9 @@ pub fn record(path: &Path, now: i64, inbound: u64, outbound: u64) {
         ts: now,
         inbound,
         outbound,
+        cpu_milli,
+        ram_milli,
+        io_bytes,
     });
     if file.samples.len() > MAX_SAMPLES {
         let drop = file.samples.len() - MAX_SAMPLES;
@@ -89,7 +114,7 @@ pub fn record(path: &Path, now: i64, inbound: u64, outbound: u64) {
     }
 }
 
-pub fn chart(path: &Path, period: TrafPeriod, now: i64) -> Vec<ChartPoint> {
+pub fn chart(path: &Path, period: TrafPeriod, now: i64) -> ChartSet {
     chart_from_samples(&load(path).samples, period, now)
 }
 
@@ -100,24 +125,49 @@ fn load(path: &Path) -> File {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
-fn chart_from_samples(samples: &[Sample], period: TrafPeriod, now: i64) -> Vec<ChartPoint> {
+fn layout(period: TrafPeriod, now: i64) -> (i64, i64, usize) {
     let window = period.window_secs();
     let bucket = period.bucket_secs();
     let start = ((now.saturating_sub(window)) / bucket) * bucket;
     let n = ((window / bucket) as usize).max(1);
-    let mut out: Vec<ChartPoint> = (0..n)
+    (start, bucket, n)
+}
+
+fn empty_points(start: i64, bucket: i64, n: usize) -> Vec<ChartPoint> {
+    (0..n)
         .map(|i| ChartPoint {
             t: start.saturating_add((i as i64).saturating_mul(bucket)),
-            bytes: 0,
+            v: 0,
         })
-        .collect();
+        .collect()
+}
+
+fn slot_index(ts: i64, start: i64, bucket: i64, n: usize) -> Option<usize> {
+    if ts < start || bucket <= 0 {
+        return None;
+    }
+    let i = ((ts - start) / bucket) as usize;
+    (i < n).then_some(i)
+}
+
+fn chart_from_samples(samples: &[Sample], period: TrafPeriod, now: i64) -> ChartSet {
+    let (start, bucket, n) = layout(period, now);
+    let mut traffic = empty_points(start, bucket, n);
+    let mut io = empty_points(start, bucket, n);
+    let mut cpu_sum = vec![0u64; n];
+    let mut ram_sum = vec![0u64; n];
+    let mut gauge_n = vec![0u64; n];
     let mut prev: Option<&Sample> = None;
     for s in samples {
         if s.ts < start {
             prev = Some(s);
             continue;
         }
-        let delta = match prev {
+        let Some(i) = slot_index(s.ts, start, bucket, n) else {
+            prev = Some(s);
+            continue;
+        };
+        let traf_delta = match prev {
             Some(p)
                 if s.inbound.saturating_add(s.outbound) >= p.inbound.saturating_add(p.outbound) =>
             {
@@ -127,13 +177,29 @@ fn chart_from_samples(samples: &[Sample], period: TrafPeriod, now: i64) -> Vec<C
             }
             _ => 0,
         };
-        let slot = (s.ts / bucket) * bucket;
-        if let Some(pt) = out.iter_mut().find(|p| p.t == slot) {
-            pt.bytes = pt.bytes.saturating_add(delta);
-        }
+        let io_delta = match prev {
+            Some(p) if s.io_bytes >= p.io_bytes => s.io_bytes.saturating_sub(p.io_bytes),
+            _ => 0,
+        };
+        traffic[i].v = traffic[i].v.saturating_add(traf_delta);
+        io[i].v = io[i].v.saturating_add(io_delta);
+        cpu_sum[i] = cpu_sum[i].saturating_add(u64::from(s.cpu_milli));
+        ram_sum[i] = ram_sum[i].saturating_add(u64::from(s.ram_milli));
+        gauge_n[i] = gauge_n[i].saturating_add(1);
         prev = Some(s);
     }
-    out
+    let mut cpu = empty_points(start, bucket, n);
+    let mut ram = empty_points(start, bucket, n);
+    for i in 0..n {
+        cpu[i].v = cpu_sum[i].checked_div(gauge_n[i]).unwrap_or(0);
+        ram[i].v = ram_sum[i].checked_div(gauge_n[i]).unwrap_or(0);
+    }
+    ChartSet {
+        traffic,
+        cpu,
+        ram,
+        io,
+    }
 }
 
 #[cfg(test)]
@@ -143,14 +209,74 @@ mod tests {
     #[test]
     fn diffs_and_buckets_hour() {
         let samples = vec![
-            Sample { ts: 1000, inbound: 10, outbound: 0 },
-            Sample { ts: 1060, inbound: 40, outbound: 10 },
-            Sample { ts: 1120, inbound: 40, outbound: 20 },
+            Sample {
+                ts: 1000,
+                inbound: 10,
+                outbound: 0,
+                cpu_milli: 0,
+                ram_milli: 0,
+                io_bytes: 0,
+            },
+            Sample {
+                ts: 1060,
+                inbound: 40,
+                outbound: 10,
+                cpu_milli: 0,
+                ram_milli: 0,
+                io_bytes: 0,
+            },
+            Sample {
+                ts: 1120,
+                inbound: 40,
+                outbound: 20,
+                cpu_milli: 0,
+                ram_milli: 0,
+                io_bytes: 0,
+            },
         ];
         let pts = chart_from_samples(&samples, TrafPeriod::Hour, 1120);
-        assert!(pts.len() >= 2);
-        let used: u64 = pts.iter().map(|p| p.bytes).sum();
+        assert!(pts.traffic.len() >= 2);
+        let used: u64 = pts.traffic.iter().map(|p| p.v).sum();
         assert_eq!(used, 50);
+    }
+
+    #[test]
+    fn cpu_average_and_io_delta() {
+        let samples = vec![
+            Sample {
+                ts: 1000,
+                inbound: 0,
+                outbound: 0,
+                cpu_milli: 10_000,
+                ram_milli: 40_000,
+                io_bytes: 100,
+            },
+            Sample {
+                ts: 1060,
+                inbound: 0,
+                outbound: 0,
+                cpu_milli: 30_000,
+                ram_milli: 50_000,
+                io_bytes: 250,
+            },
+        ];
+        let pts = chart_from_samples(&samples, TrafPeriod::Hour, 1060);
+        let cpu: u64 = pts.cpu.iter().map(|p| p.v).sum();
+        let ram: u64 = pts.ram.iter().map(|p| p.v).sum();
+        let io: u64 = pts.io.iter().map(|p| p.v).sum();
+        assert_eq!(cpu, 40_000);
+        assert_eq!(ram, 90_000);
+        assert_eq!(io, 150);
+    }
+
+    #[test]
+    fn old_json_missing_host_fields() {
+        let file: File = serde_json::from_str(
+            r#"{"samples":[{"ts":1,"inbound":2,"outbound":3}]}"#,
+        )
+        .unwrap();
+        assert_eq!(file.samples[0].cpu_milli, 0);
+        assert_eq!(file.samples[0].io_bytes, 0);
     }
 
     #[test]

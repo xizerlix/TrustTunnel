@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
-<h1 class="text-2xl sm:text-3xl font-semibold mb-6">{{ t.dashboard }}</h1>
+<h1 class="text-xl sm:text-2xl font-semibold mb-3">{{ t.dashboard }}</h1>
 
 <div id="dashboard-data">
 {% include "dashboard_data.html" %}
@@ -47,6 +47,7 @@
      data-lock-allow="{{ t.lock_allow }}"
      data-lock-block="{{ t.lock_block }}"
      data-lock-error="{{ t.lock_error }}"></div>
+<div id="traf-tip" class="traf-tip hidden"></div>
 
 <script>
 (function () {
@@ -61,7 +62,10 @@
   var destTitle = document.getElementById('dest-modal-title');
     var destUser = null;
     var destPeriod = 'hour';
+    var destReq = 0;
     var trafPeriod = 'hour';
+    var lastTrafKey = '';
+    var trafReq = 0;
   function csrf() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
@@ -76,9 +80,19 @@
         return r.text();
       })
       .then(function (html) {
-        if (html) root.innerHTML = html;
+        if (!html) return;
+        var ids = ['cpu-chart', 'ram-chart', 'io-chart', 'traf-chart', 'chart-axis'];
+        var saved = {};
+        for (var i = 0; i < ids.length; i++) {
+          var n = document.getElementById(ids[i]);
+          saved[ids[i]] = n ? n.innerHTML : '';
+        }
+        root.innerHTML = html;
+        for (var j = 0; j < ids.length; j++) {
+          var el = document.getElementById(ids[j]);
+          if (el && saved[ids[j]]) el.innerHTML = saved[ids[j]];
+        }
         markTrafPeriod();
-        loadTraf();
       })
       .catch(function () {});
   }
@@ -240,25 +254,35 @@
   }
 
   function openDest(user, period) {
+    var sameCard = !destModal.classList.contains('hidden') && destBody.innerHTML;
     destUser = user;
     destPeriod = period || 'hour';
+    destReq += 1;
+    var req = destReq;
     modal.classList.add('hidden');
     destModal.classList.remove('hidden');
     destTitle.textContent = user ? user : i18n.getAttribute('data-dest-title');
-    destBody.textContent = i18n.getAttribute('data-dest-loading');
     markPeriod(destPeriod);
+    if (!sameCard || !destBody.innerHTML) {
+      destBody.textContent = i18n.getAttribute('data-dest-loading');
+    } else {
+      destBody.style.minHeight = destBody.offsetHeight + 'px';
+    }
     fetch('/dashboard/user?user=' + encodeURIComponent(user) + '&period=' + encodeURIComponent(destPeriod), {
       credentials: 'same-origin'
     })
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (req !== destReq) return;
         if (!d || d.ok === false) {
           destBody.textContent = i18n.getAttribute('data-dest-error');
+          destBody.style.minHeight = '';
           return;
         }
         var rows = d.rows || [];
         if (!rows.length) {
           destBody.textContent = i18n.getAttribute('data-dest-empty');
+          destBody.style.minHeight = '';
           return;
         }
         var max = 1;
@@ -278,9 +302,12 @@
           html += '</div></div>';
         }
         destBody.innerHTML = html;
+        destBody.style.minHeight = '';
       })
       .catch(function () {
+        if (req !== destReq) return;
         destBody.textContent = i18n.getAttribute('data-dest-error');
+        destBody.style.minHeight = '';
       });
   }
 
@@ -296,43 +323,155 @@
   }
 
   function loadTraf() {
-    var el = document.getElementById('traf-chart');
-    if (!el) return;
-    fetch('/dashboard/traffic?period=' + encodeURIComponent(trafPeriod), { credentials: 'same-origin' })
+    var period = trafPeriod;
+    trafReq += 1;
+    var req = trafReq;
+    fetch('/dashboard/traffic?period=' + encodeURIComponent(period), { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (req !== trafReq) return;
         if (!d || !d.ok) return;
-        drawTraf(el, d.points || []);
+        var key = period + ':' + JSON.stringify(d);
+        var chart = document.getElementById('traf-chart');
+        if (key === lastTrafKey && chart && chart.innerHTML) return;
+        lastTrafKey = key;
+        drawTraf(document.getElementById('cpu-chart'), d.cpu || [], period, '#f59e0b', 'pct');
+        drawTraf(document.getElementById('ram-chart'), d.ram || [], period, '#10b981', 'pct');
+        drawTraf(document.getElementById('io-chart'), d.io || [], period, '#8b5cf6', 'bytes');
+        drawTraf(document.getElementById('traf-chart'), d.traffic || d.points || [], period, '#6366f1', 'bytes');
+        fillAxis(period);
       })
       .catch(function () {});
   }
 
-  function drawTraf(el, points) {
+  function fmtTrafBytes(n) {
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var v = n;
+    var i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    if (i === 0) return n + ' B';
+    return v.toFixed(2) + ' ' + units[i];
+  }
+
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  function fmtTrafTime(ts, period) {
+    var d = new Date(ts * 1000);
+    var hm = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    if (period === 'week') {
+      var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      try {
+        days = d.toLocaleDateString(undefined, { weekday: 'short' });
+        return days + ' ' + hm;
+      } catch (e) {
+        return hm;
+      }
+    }
+    if (period === 'day') {
+      var end = new Date((ts + 15 * 60) * 1000);
+      return hm + '–' + pad2(end.getHours()) + ':' + pad2(end.getMinutes());
+    }
+    return hm;
+  }
+
+  function trafAxisLabels(period) {
+    if (period === 'day') return ['0h', '6h', '12h', '18h', '24h'];
+    if (period === 'week') return ['0d', '2d', '4d', '6d', '7d'];
+    return ['0', '15', '30', '45', '60'];
+  }
+
+  function ptVal(p) {
+    if (!p) return 0;
+    if (p.v != null) return p.v;
+    return p.bytes || 0;
+  }
+
+  function fmtPctMilli(n) {
+    return (n / 1000).toFixed(1) + ' %';
+  }
+
+  function fillAxis(period) {
+    var el = document.getElementById('chart-axis');
+    if (!el) return;
+    var labels = trafAxisLabels(period);
+    var html = '';
+    for (var k = 0; k < labels.length; k++) {
+      html += '<span>' + labels[k] + '</span>';
+    }
+    el.innerHTML = html;
+  }
+
+  function drawTraf(el, points, period, color, kind) {
+    if (!el) return;
     if (!points.length) {
       el.innerHTML = '<p class="traf-empty">' + escapeHtml(i18n.getAttribute('data-traf-empty') || '') + '</p>';
       return;
     }
     var w = 360;
-    var h = 88;
-    var pad = 3;
-    var max = 1;
-    for (var i = 0; i < points.length; i++) {
-      if (points[i].bytes > max) max = points[i].bytes;
+    var h = 52;
+    var padL = 1;
+    var padR = 1;
+    var padT = 3;
+    var padB = 1;
+    var max = kind === 'pct' ? 100000 : 1;
+    var j;
+    if (kind !== 'pct') {
+      for (j = 0; j < points.length; j++) {
+        var pv = ptVal(points[j]);
+        if (pv > max) max = pv;
+      }
     }
-    var bw = (w - pad * 2) / points.length;
-    var html = '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">';
-    for (var j = 0; j < points.length; j++) {
-      var bh = Math.max(1.5, (points[j].bytes / max) * (h - pad * 2));
-      var x = pad + j * bw;
-      var y = h - pad - bh;
-      html += '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + Math.max(1, bw - 0.4).toFixed(2) + '" height="' + bh.toFixed(2) + '" fill="#6366f1" rx="0.8"/>';
+    var inner = w - padL - padR;
+    var bw = inner / points.length;
+    var plotH = h - padT - padB;
+    var html = '<div class="traf-plot"><svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" class="traf-svg">';
+    var hits = '';
+    for (j = 0; j < points.length; j++) {
+      var x = padL + j * bw;
+      var rw = Math.max(0.6, bw - 0.35);
+      var val = ptVal(points[j]);
+      if (val > 0) {
+        var bh = Math.max(1.2, (val / max) * plotH);
+        if (bh > plotH) bh = plotH;
+        var y = padT + plotH - bh;
+        html += '<rect class="traf-bar" x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + rw.toFixed(2) + '" height="' + bh.toFixed(2) + '" fill="' + color + '" rx="0.6"/>';
+      }
+      var shown = kind === 'pct' ? fmtPctMilli(val) : fmtTrafBytes(val);
+      var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
+      hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
-    html += '</svg>';
+    html += hits + '</svg></div>';
     el.innerHTML = html;
   }
 
+  var trafTip = document.getElementById('traf-tip');
+  document.addEventListener('pointermove', function (e) {
+    if (!trafTip) return;
+    var hit = e.target && e.target.closest && e.target.closest('.traf-hit');
+    if (!hit) {
+      trafTip.classList.add('hidden');
+      return;
+    }
+    trafTip.textContent = hit.getAttribute('data-tip') || '';
+    trafTip.classList.remove('hidden');
+    var x = e.clientX + 12;
+    var y = e.clientY + 12;
+    var tw = trafTip.offsetWidth || 120;
+    var th = trafTip.offsetHeight || 28;
+    if (x + tw > window.innerWidth - 8) x = e.clientX - tw - 12;
+    if (y + th > window.innerHeight - 8) y = e.clientY - th - 12;
+    trafTip.style.left = x + 'px';
+    trafTip.style.top = y + 'px';
+  });
+
   markTrafPeriod();
   loadTraf();
+  setInterval(loadTraf, 60000);
 
   document.getElementById('ip-modal-close').addEventListener('click', function () {
     modal.classList.add('hidden');

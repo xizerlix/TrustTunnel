@@ -126,11 +126,15 @@ fn spawn_cleanup(state: AppState) {
             let root = state.paths.root.clone();
             tokio::task::spawn_blocking(move || {
                 let (inn, out) = crate::handlers::dashboard::usage_file_totals(&root);
+                let host = crate::live::parse_host_snapshot();
                 crate::traffic_series::record(
                     &crate::traffic_series::series_path(&root),
                     chrono::Local::now().timestamp(),
                     inn,
                     out,
+                    host.cpu_milli,
+                    host.ram_milli,
+                    host.io_bytes,
                 );
             })
             .await
@@ -310,8 +314,12 @@ mod tests {
         assert!(dash.contains("user-ip-line"));
         assert!(dash.contains("js-dest-all"));
         assert!(dash.contains("js-traf-period"));
+        assert!(dash.contains("cpu-chart"));
+        assert!(dash.contains("io-chart"));
+        assert!(dash.contains("stat-strip"));
         assert!(dash.contains("user-note") || include_str!("../templates/users.html").contains("name=\"note\""));
         let modal = include_str!("../templates/dashboard.html");
         assert!(modal.contains("data-period=\"hour\""));
+        assert!(modal.contains("cpu-chart"));
     }
 }

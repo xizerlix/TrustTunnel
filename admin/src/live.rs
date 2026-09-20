@@ -460,6 +460,9 @@ pub fn parse_host_snapshot() -> HostSnapshot {
         load_color: heat_color(load_pct),
         ram_color: heat_color(ram_pct),
         disk_color: heat_color(disk_pct),
+        cpu_milli: (load_pct * 1000.0).round().clamp(0.0, 100_000.0) as u32,
+        ram_milli: (ram_pct.clamp(0.0, 100.0) * 1000.0).round() as u32,
+        io_bytes: disk_io_bytes(),
     }
 }
 
@@ -473,6 +476,9 @@ pub struct HostSnapshot {
     pub load_color: String,
     pub ram_color: String,
     pub disk_color: String,
+    pub cpu_milli: u32,
+    pub ram_milli: u32,
+    pub io_bytes: u64,
 }
 
 pub fn parse_pct(s: &str) -> f64 {
@@ -546,6 +552,44 @@ fn read_ram() -> String {
         used as f64 / 1024.0,
         total as f64 / 1024.0
     )
+}
+
+pub fn parse_block_stat(stat: &str) -> u64 {
+    let fields: Vec<&str> = stat.split_whitespace().collect();
+    if fields.len() < 7 {
+        return 0;
+    }
+    let r: u64 = fields[2].parse().unwrap_or(0);
+    let w: u64 = fields[6].parse().unwrap_or(0);
+    r.saturating_add(w).saturating_mul(512)
+}
+
+fn skip_block_name(name: &str) -> bool {
+    name.starts_with("loop")
+        || name.starts_with("ram")
+        || name.starts_with("sr")
+        || name.starts_with("fd")
+        || name.starts_with("dm-")
+        || name.starts_with("zram")
+}
+
+fn disk_io_bytes() -> u64 {
+    let Ok(dir) = std::fs::read_dir("/sys/block") else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for ent in dir.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        if skip_block_name(&name) {
+            continue;
+        }
+        let Ok(stat) = std::fs::read_to_string(ent.path().join("stat")) else {
+            continue;
+        };
+        total = total.saturating_add(parse_block_stat(&stat));
+    }
+    total
 }
 
 fn read_disk() -> String {
@@ -681,6 +725,12 @@ mod tests {
         assert!(is_private_ip("fe80::1"));
         assert!(!is_private_ip("8.8.8.8"));
         assert!(!is_private_ip("2001:4860:4860::8888"));
+    }
+
+    #[test]
+    fn block_stat_read_write_sectors() {
+        assert_eq!(parse_block_stat("10 0 2 0 4 0 6 0"), 8 * 512);
+        assert_eq!(parse_block_stat("1 2"), 0);
     }
 
     #[test]

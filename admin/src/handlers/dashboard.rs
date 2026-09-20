@@ -777,6 +777,9 @@ async fn collect(state: &AppState) -> Stats {
         chrono::Local::now().timestamp(),
         total_in,
         total_out,
+        host.cpu_milli,
+        host.ram_milli,
+        host.io_bytes,
     );
 
     Stats {
@@ -964,7 +967,10 @@ pub struct TrafQuery {
 struct TrafJson {
     ok: bool,
     period: String,
-    points: Vec<crate::traffic_series::ChartPoint>,
+    traffic: Vec<crate::traffic_series::ChartPoint>,
+    cpu: Vec<crate::traffic_series::ChartPoint>,
+    ram: Vec<crate::traffic_series::ChartPoint>,
+    io: Vec<crate::traffic_series::ChartPoint>,
 }
 
 pub async fn traffic_series(
@@ -975,13 +981,16 @@ pub async fn traffic_series(
     let period = crate::traffic_series::TrafPeriod::parse(&q.period);
     let path = crate::traffic_series::series_path(&state.paths.root);
     let now = chrono::Local::now().timestamp();
-    let points = tokio::task::spawn_blocking(move || crate::traffic_series::chart(&path, period, now))
+    let set = tokio::task::spawn_blocking(move || crate::traffic_series::chart(&path, period, now))
         .await
         .unwrap_or_default();
     Json(TrafJson {
         ok: true,
         period: period.as_str().into(),
-        points,
+        traffic: set.traffic,
+        cpu: set.cpu,
+        ram: set.ram,
+        io: set.io,
     })
     .into_response()
 }

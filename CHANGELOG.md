@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin dashboard compact status row plus CPU / RAM / disk I/O
+  charts sharing the traffic graph time step (same hour/day/week buckets).
+- [Fix] Admin dashboard graph and Top domains no longer flash empty while
+  the 5s poll or period fetch is in flight.
+- [Fix] Admin traffic graph: quarter labels on the time axis and a hover
+  tooltip with clock time plus bytes in that bucket.
 - [Fix] Top domains Last hour no longer equals Today: hour buckets must
   match the current clock hour (not `saturating_sub` against day ids).
 - [Feature] Admin dashboard traffic card shows an in/out graph for the last
