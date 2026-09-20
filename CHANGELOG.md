@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Service Top domains and restart buttons match Reboot host: content
+  width, left-aligned (not stretched across the card).
 - [Fix] Admin chart hairline covers the selected bar, not the gap between
   bars.
 - [Fix] Service card stacks Top domains above restart; chart hairline

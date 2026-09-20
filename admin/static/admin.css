@@ -372,11 +372,14 @@ textarea:focus {
 .stat-actions .stat-btn-dest {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   margin-top: 0;
   margin-bottom: 0;
-  width: auto;
+  width: max-content;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-self: flex-start;
   box-sizing: border-box;
-  justify-content: flex-start;
 }
 .stat-btn-dest {
   display: inline-flex;
