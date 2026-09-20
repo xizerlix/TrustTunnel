@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin chart hairline covers the selected bar, not the gap between
+  bars.
 - [Fix] Service card stacks Top domains above restart; chart hairline
   hides when pointer or finger leaves; readout stays reserved with the
   latest sample; host card shows hardware specs; charts have an info

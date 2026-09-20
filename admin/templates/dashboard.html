@@ -448,7 +448,7 @@
       }
       var shown = kind === 'pct' ? fmtPctMilli(val) : fmtTrafBytes(val);
       var tip = fmtTrafTime(points[j].t, period) + ' · ' + shown;
-      hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
+      hits += '<rect class="traf-hit" data-tip="' + escapeHtml(tip) + '" data-x="' + xPct.toFixed(3) + '" data-w="' + wPct.toFixed(3) + '" x="' + x.toFixed(2) + '" y="0" width="' + Math.max(rw, bw).toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }
     var last = points[points.length - 1];
     var latestTip = fmtTrafTime(last.t, period) + ' · ' + (kind === 'pct' ? fmtPctMilli(ptVal(last)) : fmtTrafBytes(ptVal(last)));
@@ -481,7 +481,10 @@
     var readout = readoutOf(plot);
     if (readout) readout.textContent = tip;
     var hair = plot.querySelector('.traf-hair');
-    if (hair) hair.style.left = ((i + 0.5) / hits.length * 100) + '%';
+    if (hair) {
+      hair.style.left = (hit.getAttribute('data-x') || '0') + '%';
+      hair.style.width = (hit.getAttribute('data-w') || '0.4') + '%';
+    }
     plot.classList.add('is-pick');
     if (trafTip) trafTip.classList.add('hidden');
   }
