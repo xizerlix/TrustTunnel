@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Reverse proxy forwards POST/PUT body to the origin before waiting
+  for a response (admin login behind `path_mask` no longer deadlocks).
 - [Fix] Admin dashboard charts match the 1.1.20 bar layout; the highlight
   is an SVG overlay on the bar (same x/width), not a line in the gap.
   Service Top domains / restart keep the 1.1.21 content-width buttons.

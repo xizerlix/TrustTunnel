@@ -177,6 +177,60 @@ async fn path_h1_private_network_disallowed() {
     }
 }
 
+#[tokio::test]
+async fn path_h1_post() {
+    run_post_case(path_h1_post_client).await;
+}
+
+#[tokio::test]
+async fn path_h2_post() {
+    run_post_case(path_h2_post_client).await;
+}
+
+#[tokio::test]
+async fn path_h3_post() {
+    run_post_case(path_h3_post_client).await;
+}
+
+async fn run_post_case<F, Fut>(client_fn: F)
+where
+    F: FnOnce(SocketAddr) -> Fut,
+    Fut: Future<Output = (http::response::Parts, Bytes)>,
+{
+    common::set_up_logger();
+    let endpoint_address = common::make_endpoint_address();
+    let (proxy_address, proxy_task) = run_echo_proxy();
+
+    let client_task = async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (response, body) = client_fn(endpoint_address).await;
+        assert_eq!(response.status, http::StatusCode::OK);
+        assert_eq!(body.as_ref(), POST_BODY.as_bytes());
+    };
+    let endpoint_task = run_endpoint(&endpoint_address, &proxy_address, true);
+
+    tokio::pin!(client_task);
+    tokio::pin!(proxy_task);
+    tokio::pin!(endpoint_task);
+
+    tokio::select! {
+        _ = &mut endpoint_task => unreachable!(),
+        _ = tokio::time::sleep(Duration::from_secs(10)) => panic!("Timed out"),
+        _ = &mut client_task => (),
+        _ = &mut proxy_task => {
+            tokio::select! {
+                _ = client_task => (),
+                _ = &mut endpoint_task => unreachable!(),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                    panic!("Client timed out after proxy completed")
+                }
+            }
+        },
+    }
+}
+
+const POST_BODY: &str = "username=admin&password=secret";
+
 fn assert_body_matches(body: &Bytes) {
     assert_eq!(body.len(), RESPONSE_BODY.len(), "response length mismatch");
     let expected_hash = digest(&SHA256, RESPONSE_BODY.as_ref());
@@ -283,6 +337,83 @@ async fn path_h3_client(endpoint_address: &SocketAddr) -> (http::response::Parts
     .await
 }
 
+async fn path_h1_post_client(endpoint_address: SocketAddr) -> (http::response::Parts, Bytes) {
+    let stream =
+        common::establish_tls_connection(common::MAIN_DOMAIN_NAME, &endpoint_address, None).await;
+    post_form(stream, http::Version::HTTP_11, &endpoint_address).await
+}
+
+async fn path_h2_post_client(endpoint_address: SocketAddr) -> (http::response::Parts, Bytes) {
+    let stream = common::establish_tls_connection(
+        common::MAIN_DOMAIN_NAME,
+        &endpoint_address,
+        Some(net_utils::HTTP2_ALPN.as_bytes()),
+    )
+    .await;
+    post_form(stream, http::Version::HTTP_2, &endpoint_address).await
+}
+
+async fn path_h3_post_client(endpoint_address: SocketAddr) -> (http::response::Parts, Bytes) {
+    let mut conn =
+        common::Http3Session::connect(&endpoint_address, common::MAIN_DOMAIN_NAME, None).await;
+    conn.exchange(
+        Request::post(format!(
+            "https://{}:{}/hello/login",
+            common::MAIN_DOMAIN_NAME,
+            endpoint_address.port()
+        ))
+        .header(http::header::CONTENT_LENGTH, POST_BODY.len())
+        .header(
+            http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(hyper::Body::from(POST_BODY.as_bytes().to_vec()))
+        .unwrap(),
+    )
+    .await
+}
+
+async fn post_form<IO>(
+    io: IO,
+    version: http::Version,
+    endpoint_address: &SocketAddr,
+) -> (http::response::Parts, Bytes)
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let url = format!(
+        "https://{}:{}/hello/login",
+        common::MAIN_DOMAIN_NAME,
+        endpoint_address.port()
+    );
+    let (mut request, conn) = hyper::client::conn::Builder::new()
+        .http2_only(version == http::Version::HTTP_2)
+        .handshake(io)
+        .await
+        .unwrap();
+    let exchange = async {
+        let req = hyper::Request::post(url)
+            .version(version)
+            .header(
+                http::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(hyper::Body::from(POST_BODY.as_bytes().to_vec()))
+            .unwrap();
+        let response = request.send_request(req).await.unwrap();
+        let (parts, body) = response.into_parts();
+        (parts, hyper::body::to_bytes(body).await.unwrap())
+    };
+    futures::pin_mut!(exchange);
+    match futures::future::select(conn, exchange).await {
+        futures::future::Either::Left((r, exchange)) => {
+            info!("HTTP connection closed with result: {:?}", r);
+            exchange.await
+        }
+        futures::future::Either::Right((response, _)) => response,
+    }
+}
+
 async fn run_endpoint(
     endpoint_address: &SocketAddr,
     proxy_address: &SocketAddr,
@@ -327,6 +458,33 @@ async fn run_endpoint(
         .unwrap();
 
     common::run_endpoint_with_settings(settings, hosts_settings).await;
+}
+
+fn run_echo_proxy() -> (SocketAddr, impl Future<Output = ()>) {
+    let server = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let _ = server.set_nonblocking(true);
+    let server_addr = server.local_addr().unwrap();
+    (server_addr, async move {
+        let (socket, peer) = TcpListener::from_std(server)
+            .unwrap()
+            .accept()
+            .await
+            .unwrap();
+        info!("New connection from {}", peer);
+        hyper::server::conn::Http::new()
+            .http1_only(true)
+            .serve_connection(socket, hyper::service::service_fn(echo_handler))
+            .await
+            .unwrap();
+    })
+}
+
+async fn echo_handler(
+    request: Request<hyper::Body>,
+) -> Result<Response<hyper::Body>, hyper::Error> {
+    info!("Received request: {:?}", request);
+    let body = hyper::body::to_bytes(request.into_body()).await?;
+    Ok(Response::builder().body(hyper::Body::from(body)).unwrap())
 }
 
 fn run_proxy() -> (SocketAddr, impl Future<Output = ()>) {

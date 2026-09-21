@@ -267,6 +267,9 @@ protocol/deep-link format, library API) when relevant.
    `[[client]]` in `credentials.toml` (absent/false = unlocked), then
    restart the endpoint so live sessions drop. User-page saves MUST keep
    the existing `disabled` flag.
+   Reverse proxy MUST copy the request body (Content-Length bytes, or until
+   EOF for POST/PUT/PATCH without a length) to the origin before reading
+   the origin response so form POST cannot deadlock.
    Below 768px the dashboard user table MUST stack as a card grid (name /
    sessions / lock, then IPs, then traffic / quota) with nowrap on IP age
    and traffic so values do not split while columns sit empty.

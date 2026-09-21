@@ -149,6 +149,15 @@ async fn handle_stream(
             }
         }
     }
+    if !matches!(protocol, Protocol::Http1) {
+        request_headers.headers.remove(http::header::CONNECTION);
+        request_headers
+            .headers
+            .remove(http::header::TRANSFER_ENCODING);
+        request_headers.headers.remove(http::header::UPGRADE);
+        request_headers.headers.remove(http::header::TE);
+        request_headers.headers.remove(http::header::EXPECT);
+    }
     request_headers.headers.insert(
         &ORIGINAL_PROTOCOL_HEADER,
         http::HeaderValue::from_static(protocol.as_str()),
@@ -162,6 +171,15 @@ async fn handle_stream(
         request_headers
     );
     server_sink.write_all(encoded).await?;
+    let mut client_source = request.finalize();
+    if request_carries_body(&request_headers) {
+        let content_length = request_headers
+            .headers
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|x| x.to_str().ok())
+            .and_then(|x| x.parse::<u64>().ok());
+        copy_request_body(&mut client_source, &mut server_sink, content_length).await?;
+    }
 
     let mut buffer = BytesMut::new();
     let (response, chunk, is_chunked) = loop {
@@ -405,11 +423,7 @@ async fn handle_stream(
     }
 
     let mut pipe = DuplexPipe::new(
-        (
-            pipe::SimplexDirection::Outgoing,
-            request.finalize(),
-            server_sink,
-        ),
+        (pipe::SimplexDirection::Outgoing, client_source, server_sink),
         (pipe::SimplexDirection::Incoming, server_source, client_sink),
         |_, _| (),
     );
@@ -435,6 +449,61 @@ async fn write_all(sink: &mut Box<dyn pipe::Sink>, mut data: bytes::Bytes) -> io
         }
     }
     Ok(())
+}
+
+fn request_carries_body(headers: &http_codec::RequestHeaders) -> bool {
+    if matches!(
+        headers.method,
+        http::Method::GET | http::Method::HEAD | http::Method::CONNECT
+    ) {
+        return false;
+    }
+    match headers
+        .headers
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|x| x.to_str().ok())
+        .and_then(|x| x.parse::<u64>().ok())
+    {
+        Some(0) => false,
+        Some(_) => true,
+        None => matches!(
+            headers.method,
+            http::Method::POST | http::Method::PUT | http::Method::PATCH
+        ),
+    }
+}
+
+async fn copy_request_body(
+    source: &mut Box<dyn pipe::Source>,
+    sink: &mut Box<dyn pipe::Sink>,
+    content_length: Option<u64>,
+) -> io::Result<()> {
+    let mut remaining = content_length;
+    loop {
+        if remaining == Some(0) {
+            return Ok(());
+        }
+        match source.read().await? {
+            pipe::Data::Chunk(chunk) => {
+                let n = chunk.len();
+                source.consume(n)?;
+                if n == 0 {
+                    continue;
+                }
+                if let Some(left) = remaining.as_mut() {
+                    let take = std::cmp::min(n as u64, *left) as usize;
+                    write_all(sink, chunk.slice(..take)).await?;
+                    *left -= take as u64;
+                    if *left == 0 {
+                        return Ok(());
+                    }
+                } else {
+                    write_all(sink, chunk).await?;
+                }
+            }
+            pipe::Data::Eof => return Ok(()),
+        }
+    }
 }
 
 fn send_bad_gateway(
