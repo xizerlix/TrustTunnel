@@ -275,7 +275,10 @@ protocol/deep-link format, library API) when relevant.
    the peer is loopback (the origin TCP client is 127.0.0.1).
    `/clients` MUST keep User-Agent strings from CONNECT on each session and
    merge distinct agents under the same username+IP (NAT). The dashboard IP
-   modal MUST list those agents under the geo block.
+   modal MUST list those agents under the geo block, collapsing protocol
+   channel tokens (`_udp2`, `_icmp`, `_check`, `unknown`) so one device is
+   one OS+app line. The IP row MUST show OS icons for distinct platforms
+   on that address.
    Saving vpn/users/rules/hosts or dashboard restart MUST defer
    `systemctl restart` / `kill -HUP` (~2.5s) so the HTTP response can flush
    through reverse proxy on :443; do not restart the endpoint on the

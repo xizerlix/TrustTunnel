@@ -38,7 +38,12 @@ pub struct IpView {
 
 impl IpView {
     pub fn agents_json(&self) -> String {
-        serde_json::to_string(&self.user_agents).unwrap_or_else(|_| "[]".into())
+        serde_json::to_string(&crate::client_ua::display_lines(&self.user_agents))
+            .unwrap_or_else(|_| "[]".into())
+    }
+
+    pub fn os_keys(&self) -> Vec<String> {
+        crate::client_ua::os_keys(&self.user_agents)
     }
 }
 

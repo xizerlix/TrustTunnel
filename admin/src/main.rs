@@ -1,5 +1,6 @@
 mod apply;
 mod auth;
+mod client_ua;
 mod config;
 mod dest_stats;
 mod error;
@@ -337,6 +338,7 @@ mod tests {
         assert!(dash.contains("stat-actions"));
         assert!(dash.contains("stat-btn-dest"));
         assert!(dash.contains("data-agents"));
+        assert!(include_str!("../templates/dashboard_data.html").contains("os-ico"));
         let charts = include_str!("../templates/dashboard.html");
         assert!(charts.contains("traf-sel"));
         assert!(charts.contains("var x = padL + j * bw"));

@@ -481,6 +481,13 @@ textarea:focus {
   white-space: nowrap;
 }
 .user-age { flex-shrink: 0; }
+.os-ico {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  flex-shrink: 0;
+  color: #475569;
+}
 
 @media (max-width: 767px) {
   .user-table-wrap { overflow-x: visible; }
