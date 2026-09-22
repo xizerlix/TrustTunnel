@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin can disconnect one IP (`×` on the dashboard IP row)
+  without locking the whole user; live TLS tunnels drop, reconnect is
+  allowed.
+- [Feature] `rules.toml` `domain` (e.g. `instagram.com`) drops CONNECT,
+  TLS SNI, and DNS to that host and subdomains; inbound CIDR /
+  `client_random` rules are unchanged.
 - [Fix] Endpoint compiles: `User-Agent` is read on the multiplexed CONNECT
   request (not the later TCP/UDP-only traits).
 - [Feature] Admin IP modal lists CONNECT `User-Agent` strings under the geo

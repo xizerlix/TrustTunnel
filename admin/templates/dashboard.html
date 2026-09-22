@@ -57,7 +57,9 @@
      data-traf-empty="{{ t.traf_empty }}"
      data-lock-allow="{{ t.lock_allow }}"
      data-lock-block="{{ t.lock_block }}"
-     data-lock-error="{{ t.lock_error }}"></div>
+     data-lock-error="{{ t.lock_error }}"
+     data-kick-confirm="{{ t.kick_confirm }}"
+     data-kick-error="{{ t.kick_error }}"></div>
 <div id="traf-tip" class="traf-tip hidden"></div>
 
 <script>
@@ -136,6 +138,29 @@
       postOp('/dashboard/reboot').then(function (j) {
         if (j && j.message) alert(j.message);
       }).catch(function () {}).then(function () { reboot.disabled = false; });
+      return;
+    }
+    var kickBtn = t.closest('.js-kick-ip');
+    if (kickBtn) {
+      var user = kickBtn.getAttribute('data-user') || '';
+      var ip = kickBtn.getAttribute('data-ip') || '';
+      if (!user || !ip || kickBtn.disabled) return;
+      if (!confirm(i18n.getAttribute('data-kick-confirm'))) return;
+      kickBtn.disabled = true;
+      fetch('/dashboard/ip/kick?user=' + encodeURIComponent(user) + '&ip=' + encodeURIComponent(ip), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'x-csrf-token': csrf() }
+      }).then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (j) {
+          if (!j || !j.ok) {
+            alert((j && j.message) || i18n.getAttribute('data-kick-error'));
+            return;
+          }
+          tick();
+        }).catch(function () {
+          alert(i18n.getAttribute('data-kick-error'));
+        }).then(function () { kickBtn.disabled = false; });
       return;
     }
     var ipBtn = t.closest('.js-ip');

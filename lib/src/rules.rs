@@ -24,6 +24,12 @@ pub struct Rule {
     #[serde(default)]
     pub client_random_prefix: Option<String>,
 
+    /// Destination hostname (CONNECT authority, TLS SNI, or DNS question).
+    /// `instagram.com` also matches `www.instagram.com`. Inbound TLS accept
+    /// ignores rules that set this field.
+    #[serde(default)]
+    pub domain: Option<String>,
+
     /// Action to take when this rule matches
     pub action: RuleAction,
 }
@@ -37,6 +43,7 @@ pub struct RulesConfig {
 }
 
 /// Rule evaluation engine
+#[derive(Clone)]
 pub struct RulesEngine {
     rules: RulesConfig,
 }
@@ -49,8 +56,16 @@ pub enum RuleEvaluation {
 }
 
 impl Rule {
-    /// Check if this rule matches the given connection parameters
+    fn has_domain(&self) -> bool {
+        self.domain.as_ref().is_some_and(|d| !d.trim().is_empty())
+    }
+
+    /// Check if this inbound (client IP / client_random) rule matches.
+    /// Destination (`domain`) rules never match here.
     pub fn matches(&self, client_ip: &IpAddr, client_random: Option<&[u8]>) -> bool {
+        if self.has_domain() {
+            return false;
+        }
         let mut matches = true;
 
         // Check CIDR match if specified
@@ -136,7 +151,7 @@ impl RulesEngine {
                 .rules
                 .rule
                 .iter()
-                .any(|r| r.client_random_prefix.is_some())
+                .any(|r| !r.has_domain() && r.client_random_prefix.is_some())
         {
             return RuleEvaluation::Deny;
         }
@@ -154,10 +169,84 @@ impl RulesEngine {
         RuleEvaluation::Allow
     }
 
-    /// Get a reference to the rules configuration
+    /// First matching destination rule (CONNECT / SNI / DNS). Default allow.
+    pub fn evaluate_destination(&self, client_ip: Option<&IpAddr>, host: &str) -> RuleEvaluation {
+        for rule in &self.rules.rule {
+            if rule.matches_destination(client_ip, host) {
+                return match rule.action {
+                    RuleAction::Allow => RuleEvaluation::Allow,
+                    RuleAction::Deny => RuleEvaluation::Deny,
+                };
+            }
+        }
+        RuleEvaluation::Allow
+    }
+
+    pub fn denies_destination(&self, client_ip: Option<&IpAddr>, host: &str) -> bool {
+        self.evaluate_destination(client_ip, host) == RuleEvaluation::Deny
+    }
+
     pub fn config(&self) -> &RulesConfig {
         &self.rules
     }
+}
+
+impl Rule {
+    pub fn matches_destination(&self, client_ip: Option<&IpAddr>, host: &str) -> bool {
+        let Some(domain) = self
+            .domain
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        else {
+            return false;
+        };
+        if !host_matches_domain(host, domain) {
+            return false;
+        }
+        if let Some(cidr_str) = &self.cidr {
+            let Some(ip) = client_ip else {
+                return false;
+            };
+            if let Ok(cidr) = cidr_str.parse::<IpNet>() {
+                if !cidr.contains(ip) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn host_matches_domain(host: &str, rule: &str) -> bool {
+    let Some(host) = acl_host(host) else {
+        return false;
+    };
+    let Some(rule) = acl_host(rule) else {
+        return false;
+    };
+    host == rule || host.ends_with(&format!(".{rule}"))
+}
+
+fn acl_host(s: &str) -> Option<String> {
+    let mut host = s.trim().trim_end_matches('.').to_ascii_lowercase();
+    if let Some(stripped) = host.strip_prefix('[') {
+        if let Some(end) = stripped.find(']') {
+            host = stripped[..end].to_string();
+        }
+    }
+    if host.parse::<IpAddr>().is_ok() {
+        return None;
+    }
+    if let Some(rest) = host.strip_prefix("www.") {
+        host = rest.to_string();
+    }
+    if host.is_empty() || host.len() > 253 {
+        return None;
+    }
+    Some(host)
 }
 
 #[cfg(test)]
@@ -170,6 +259,7 @@ mod tests {
         let rule = Rule {
             cidr: Some("192.168.1.0/24".to_string()),
             client_random_prefix: None,
+            domain: None,
             action: RuleAction::Allow,
         };
 
@@ -185,6 +275,7 @@ mod tests {
         let rule = Rule {
             cidr: None,
             client_random_prefix: Some("aabbcc".to_string()),
+            domain: None,
             action: RuleAction::Deny,
         };
 
@@ -203,6 +294,7 @@ mod tests {
         let rule = Rule {
             cidr: Some("10.0.0.0/8".to_string()),
             client_random_prefix: Some("ff".to_string()),
+            domain: None,
             action: RuleAction::Allow,
         };
 
@@ -225,16 +317,19 @@ mod tests {
                 Rule {
                     cidr: Some("192.168.1.0/24".to_string()),
                     client_random_prefix: None,
+                    domain: None,
                     action: RuleAction::Deny,
                 },
                 Rule {
                     cidr: Some("10.0.0.0/8".to_string()),
                     client_random_prefix: None,
+                    domain: None,
                     action: RuleAction::Allow,
                 },
                 Rule {
                     cidr: None,
                     client_random_prefix: None,
+                    domain: None,
                     action: RuleAction::Deny, // Catch-all deny
                 },
             ],
@@ -257,6 +352,7 @@ mod tests {
             rule: vec![Rule {
                 cidr: None,
                 client_random_prefix: Some("aabbcc".to_string()),
+                domain: None,
                 action: RuleAction::Allow,
             }],
         };
@@ -274,6 +370,7 @@ mod tests {
         let rule = Rule {
             cidr: None,
             client_random_prefix: Some("a0b0/f0f0".to_string()), // prefix=a0b0, mask=f0f0
+            domain: None,
             action: RuleAction::Allow,
         };
 
@@ -300,6 +397,7 @@ mod tests {
         let rule = Rule {
             cidr: None,
             client_random_prefix: Some("12345678/ffff0000".to_string()),
+            domain: None,
             action: RuleAction::Allow,
         };
 
@@ -320,6 +418,7 @@ mod tests {
         let rule = Rule {
             cidr: None,
             client_random_prefix: Some("aabbcc/".to_string()), // Invalid: empty mask
+            domain: None,
             action: RuleAction::Allow,
         };
 
@@ -328,5 +427,64 @@ mod tests {
 
         // Should not match due to invalid format
         assert!(!rule.matches(&ip, Some(&client_random)));
+    }
+
+    fn dest_rule(domain: &str, cidr: Option<&str>, action: RuleAction) -> Rule {
+        Rule {
+            cidr: cidr.map(str::to_string),
+            client_random_prefix: None,
+            domain: Some(domain.into()),
+            action,
+        }
+    }
+
+    #[test]
+    fn domain_rule_does_not_match_inbound() {
+        let ip = IpAddr::from_str("8.8.8.8").unwrap();
+        let rule = dest_rule("instagram.com", None, RuleAction::Deny);
+        assert!(!rule.matches(&ip, None));
+        let engine = RulesEngine::from_config(RulesConfig { rule: vec![rule] });
+        assert_eq!(engine.evaluate(&ip, None), RuleEvaluation::Allow);
+    }
+
+    #[test]
+    fn deny_instagram_matches_www_and_subdomains() {
+        let engine = RulesEngine::from_config(RulesConfig {
+            rule: vec![dest_rule("instagram.com", None, RuleAction::Deny)],
+        });
+        let ip = IpAddr::from_str("1.2.3.4").unwrap();
+        assert!(engine.denies_destination(Some(&ip), "instagram.com"));
+        assert!(engine.denies_destination(Some(&ip), "www.instagram.com"));
+        assert!(engine.denies_destination(Some(&ip), "i.instagram.com"));
+        assert!(!engine.denies_destination(Some(&ip), "notinstagram.com"));
+        assert!(!engine.denies_destination(Some(&ip), "example.com"));
+    }
+
+    #[test]
+    fn allow_cdn_beats_later_deny() {
+        let engine = RulesEngine::from_config(RulesConfig {
+            rule: vec![
+                dest_rule("cdn.instagram.com", None, RuleAction::Allow),
+                dest_rule("instagram.com", None, RuleAction::Deny),
+            ],
+        });
+        let ip = IpAddr::from_str("1.2.3.4").unwrap();
+        assert!(!engine.denies_destination(Some(&ip), "cdn.instagram.com"));
+        assert!(engine.denies_destination(Some(&ip), "www.instagram.com"));
+    }
+
+    #[test]
+    fn domain_rule_can_be_scoped_to_cidr() {
+        let engine = RulesEngine::from_config(RulesConfig {
+            rule: vec![dest_rule(
+                "instagram.com",
+                Some("10.0.0.0/8"),
+                RuleAction::Deny,
+            )],
+        });
+        let inside = IpAddr::from_str("10.1.2.3").unwrap();
+        let outside = IpAddr::from_str("8.8.8.8").unwrap();
+        assert!(engine.denies_destination(Some(&inside), "instagram.com"));
+        assert!(!engine.denies_destination(Some(&outside), "instagram.com"));
     }
 }

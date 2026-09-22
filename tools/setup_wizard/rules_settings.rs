@@ -32,6 +32,7 @@ fn build_interactive() -> RulesConfig {
     println!("  - Client IP address (CIDR notation, e.g., 192.168.1.0/24)");
     println!("  - TLS client random prefix (hex-encoded, e.g., aabbcc)");
     println!("  - TLS client random with mask for bitwise matching");
+    println!("  - Destination domain (CONNECT / SNI / DNS, e.g., instagram.com)");
     println!("  - Both conditions together");
     println!();
 
@@ -44,7 +45,7 @@ fn add_custom_rules(rules: &mut Vec<Rule>) {
     println!();
     while ask_for_agreement("Add a custom rule?") {
         let rule_type = ask_for_input::<String>(
-            "Rule type (1=IP range, 2=client random prefix, 3=both)",
+            "Rule type (1=IP range, 2=client random prefix, 3=both, 4=destination domain)",
             Some("1".to_string()),
         );
 
@@ -52,6 +53,7 @@ fn add_custom_rules(rules: &mut Vec<Rule>) {
             "1" => add_ip_rule(rules),
             "2" => add_client_random_rule(rules),
             "3" => add_combined_rule(rules),
+            "4" => add_domain_rule(rules),
             _ => {
                 warn!("Invalid choice. Skipping rule.");
                 continue;
@@ -78,9 +80,30 @@ fn add_ip_rule(rules: &mut Vec<Rule>) {
     rules.push(Rule {
         cidr: Some(cidr),
         client_random_prefix: None,
+        domain: None,
         action,
     });
 
+    info!("Rule added successfully.");
+}
+
+fn add_domain_rule(rules: &mut Vec<Rule>) {
+    let domain = ask_for_input::<String>(
+        "Destination domain to match (e.g., instagram.com; also matches www and subdomains)",
+        None,
+    );
+    let domain = domain.trim().to_string();
+    if domain.is_empty() || domain.parse::<ipnet::IpNet>().is_ok() {
+        warn!("Invalid domain. Skipping rule.");
+        return;
+    }
+    let action = ask_for_rule_action();
+    rules.push(Rule {
+        cidr: None,
+        client_random_prefix: None,
+        domain: Some(domain),
+        action,
+    });
     info!("Rule added successfully.");
 }
 
@@ -124,6 +147,7 @@ fn add_client_random_rule(rules: &mut Vec<Rule>) {
     rules.push(Rule {
         cidr: None,
         client_random_prefix: Some(client_random_value),
+        domain: None,
         action,
     });
 
@@ -181,6 +205,7 @@ fn add_combined_rule(rules: &mut Vec<Rule>) {
     rules.push(Rule {
         cidr: Some(cidr),
         client_random_prefix: Some(client_random_value),
+        domain: None,
         action,
     });
 
