@@ -53,6 +53,9 @@ pub(crate) trait PendingMultiplexedRequest:
 {
     /// Get the authorization info
     fn auth_info(&self) -> io::Result<Option<authentication::Source<'_>>>;
+
+    /// CONNECT `User-Agent`, if the client sent one
+    fn user_agent(&self) -> Option<String>;
 }
 
 pub(crate) enum PendingDemultiplexedRequest {

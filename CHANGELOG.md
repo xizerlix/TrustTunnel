@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Endpoint compiles: `User-Agent` is read on the multiplexed CONNECT
+  request (not the later TCP/UDP-only traits).
 - [Feature] Admin IP modal lists CONNECT `User-Agent` strings under the geo
   block; several devices behind one NAT IP show as several lines.
 - [Fix] Reverse proxy sends `X-Forwarded-For` (TLS client IP) so admin

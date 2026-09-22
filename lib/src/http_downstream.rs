@@ -302,6 +302,10 @@ impl downstream::PendingMultiplexedRequest for PendingRequest {
     fn auth_info(&self) -> io::Result<Option<authentication::Source<'_>>> {
         self.stream.request().auth_info()
     }
+
+    fn user_agent(&self) -> Option<String> {
+        self.stream.request().user_agent()
+    }
 }
 
 impl downstream::PendingRequest for DatagramMultiplexer {
