@@ -264,11 +264,9 @@ impl Metrics {
     /// session gauge accounting is owned by the `ClientSessionsCounter` RAII guard.
     pub fn register_connection(&self, conn_id: String, ip: Option<IpAddr>) {
         if let Ok(mut clients) = self.clients.lock() {
-            clients.entry(conn_id).or_insert_with(ClientInfo::default);
-            if let Some(entry) = clients.get_mut(&conn_id) {
-                if ip.is_some() {
-                    entry.ip = ip;
-                }
+            let entry = clients.entry(conn_id).or_default();
+            if ip.is_some() {
+                entry.ip = ip;
             }
         }
     }
