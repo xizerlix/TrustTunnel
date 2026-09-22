@@ -38,12 +38,15 @@ struct ClientInfo {
     username: Option<String>,
     ip: Option<IpAddr>,
     sessions: u64,
+    user_agents: BTreeSet<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
 struct ClientIpEntry {
     address: String,
     tag: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    user_agents: Vec<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -76,7 +79,10 @@ pub(crate) struct OutboundUdpSocketCounter {
 }
 
 impl Metrics {
-    pub fn new(per_client: bool, traffic_limiter: Option<Arc<TrafficLimiter>>) -> io::Result<Arc<Self>> {
+    pub fn new(
+        per_client: bool,
+        traffic_limiter: Option<Arc<TrafficLimiter>>,
+    ) -> io::Result<Arc<Self>> {
         let registry = prometheus::Registry::new();
         Ok(Arc::new(Self {
             per_client,
@@ -216,7 +222,23 @@ impl Metrics {
                 username: None,
                 ip,
                 sessions: 0,
+                user_agents: BTreeSet::new(),
             });
+        }
+    }
+
+    pub fn note_connection_user_agent(&self, conn_id: &str, user_agent: &str) {
+        let Some(ua) = sanitize_user_agent(user_agent) else {
+            return;
+        };
+        let Ok(mut clients) = self.clients.lock() else {
+            return;
+        };
+        if let Some(entry) = clients.get_mut(conn_id) {
+            if entry.user_agents.len() >= 8 && !entry.user_agents.contains(&ua) {
+                return;
+            }
+            entry.user_agents.insert(ua);
         }
     }
 
@@ -268,7 +290,7 @@ impl Metrics {
             sessions: u64,
             inbound: u64,
             outbound: u64,
-            ips: BTreeSet<String>,
+            ips: HashMap<String, BTreeSet<String>>,
         }
         impl Default for AggEntry {
             fn default() -> Self {
@@ -276,7 +298,7 @@ impl Metrics {
                     sessions: 0,
                     inbound: 0,
                     outbound: 0,
-                    ips: BTreeSet::new(),
+                    ips: HashMap::new(),
                 }
             }
         }
@@ -298,7 +320,11 @@ impl Metrics {
                 let entry = agg.entry(uname).or_default();
                 entry.sessions = entry.sessions.saturating_add(info.sessions);
                 if let Some(ip) = info.ip {
-                    entry.ips.insert(ip.to_string());
+                    entry
+                        .ips
+                        .entry(ip.to_string())
+                        .or_default()
+                        .extend(info.user_agents.iter().cloned());
                 }
             }
         }
@@ -306,14 +332,16 @@ impl Metrics {
         let mut summaries: Vec<ClientSummary> = agg
             .into_iter()
             .map(|(username, entry)| {
-                let ips: Vec<ClientIpEntry> = entry
+                let mut ips: Vec<ClientIpEntry> = entry
                     .ips
                     .into_iter()
-                    .map(|address| ClientIpEntry {
+                    .map(|(address, agents)| ClientIpEntry {
                         tag: ip_hashtag(&address),
+                        user_agents: agents.into_iter().collect(),
                         address,
                     })
                     .collect();
+                ips.sort_by(|a, b| a.address.cmp(&b.address));
                 ClientSummary {
                     ip: ips.first().map(|x| x.address.clone()),
                     username,
@@ -363,6 +391,21 @@ impl Metrics {
 
 fn ip_hashtag(address: &str) -> String {
     format!("#ip_{}", address.replace('.', "_").replace(':', "_"))
+}
+
+fn sanitize_user_agent(s: &str) -> Option<String> {
+    let trimmed: String = s
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 impl ClientSessionsCounter {
@@ -806,5 +849,46 @@ mod tests {
         assert_eq!(summaries[0].sessions, 0);
         assert_eq!(summaries[0].inbound, 0);
         assert_eq!(summaries[0].outbound, 0);
+    }
+
+    #[test]
+    fn clients_summary_keeps_two_user_agents_on_one_nat_ip() {
+        let m = metrics(true);
+        m.register_connection("conn1".into(), Some("203.0.113.10".parse().unwrap()));
+        m.register_connection("conn2".into(), Some("203.0.113.10".parse().unwrap()));
+        let _a = m.clone().client_sessions_counter(
+            Protocol::Http2,
+            "conn1".into(),
+            Some("alice".into()),
+        );
+        let _b = m.clone().client_sessions_counter(
+            Protocol::Http2,
+            "conn2".into(),
+            Some("alice".into()),
+        );
+        m.note_connection_user_agent("conn1", "Android TrustTunnel");
+        m.note_connection_user_agent("conn2", "iOS TrustTunnel");
+        m.note_connection_user_agent("conn2", "iOS TrustTunnel");
+
+        let summaries = m.clients_summary(&["alice".into()]);
+        let alice = summaries.iter().find(|s| s.username == "alice").unwrap();
+        assert_eq!(alice.ips.len(), 1);
+        assert_eq!(alice.ips[0].address, "203.0.113.10");
+        assert_eq!(
+            alice.ips[0].user_agents,
+            vec![
+                "Android TrustTunnel".to_string(),
+                "iOS TrustTunnel".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn sanitize_user_agent_drops_empty_and_controls() {
+        assert_eq!(sanitize_user_agent("  \n"), None);
+        assert_eq!(
+            sanitize_user_agent("Android\u{0007} 1.4"),
+            Some("Android 1.4".into())
+        );
     }
 }

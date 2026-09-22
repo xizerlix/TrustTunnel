@@ -336,6 +336,7 @@ mod tests {
         );
         assert!(dash.contains("stat-actions"));
         assert!(dash.contains("stat-btn-dest"));
+        assert!(dash.contains("data-agents"));
         let charts = include_str!("../templates/dashboard.html");
         assert!(charts.contains("traf-sel"));
         assert!(charts.contains("var x = padL + j * bw"));
@@ -345,5 +346,6 @@ mod tests {
         assert!(include_str!("handlers/users.rs").contains("schedule_apply"));
         assert!(include_str!("handlers/vpn.rs").contains("schedule_apply"));
         assert!(include_str!("apply.rs").contains("APPLY_DEFER"));
+        assert!(charts.contains("data-geo-client"));
     }
 }

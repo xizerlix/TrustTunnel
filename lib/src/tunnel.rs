@@ -378,6 +378,11 @@ impl Tunnel {
                         );
                     }
                 }
+                if let Some(ua) = request.user_agent() {
+                    context
+                        .metrics
+                        .note_connection_user_agent(&log_id.to_string(), &ua);
+                }
                 match request.promote_to_next_state() {
                     Ok(None) => {
                         log_id!(trace, request_id, "Health check request completed");

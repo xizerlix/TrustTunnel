@@ -273,6 +273,9 @@ protocol/deep-link format, library API) when relevant.
    Reverse proxy MUST set `X-Forwarded-For` / `X-Real-IP` from the TLS peer
    and `X-Forwarded-Proto: https`. Admin login MUST use those headers when
    the peer is loopback (the origin TCP client is 127.0.0.1).
+   `/clients` MUST keep User-Agent strings from CONNECT on each session and
+   merge distinct agents under the same username+IP (NAT). The dashboard IP
+   modal MUST list those agents under the geo block.
    Saving vpn/users/rules/hosts or dashboard restart MUST defer
    `systemctl restart` / `kill -HUP` (~2.5s) so the HTTP response can flush
    through reverse proxy on :443; do not restart the endpoint on the

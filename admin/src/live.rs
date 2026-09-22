@@ -33,6 +33,13 @@ pub struct IpView {
     pub address: String,
     pub connected_h: String,
     pub kind: &'static str,
+    pub user_agents: Vec<String>,
+}
+
+impl IpView {
+    pub fn agents_json(&self) -> String {
+        serde_json::to_string(&self.user_agents).unwrap_or_else(|_| "[]".into())
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -82,10 +89,7 @@ impl LiveCache {
 
     pub fn sync_ips(&self, pairs: &[(String, String)]) -> Vec<IpView> {
         let now = unix_now();
-        let live_keys: Vec<String> = pairs
-            .iter()
-            .map(|(u, ip)| format!("{u}|{ip}"))
-            .collect();
+        let live_keys: Vec<String> = pairs.iter().map(|(u, ip)| format!("{u}|{ip}")).collect();
         {
             let mut seen = self.seen.lock().unwrap();
             for (k, v) in load_json_map(BOT_SEEN) {
@@ -95,23 +99,21 @@ impl LiveCache {
                 seen.entry(key.clone()).or_insert(now);
             }
             seen.retain(|k, _| live_keys.iter().any(|l| l == k));
-            let _ = std::fs::write(OUR_SEEN, serde_json::to_string(&*seen).unwrap_or_else(|_| "{}".into()));
+            let _ = std::fs::write(
+                OUR_SEEN,
+                serde_json::to_string(&*seen).unwrap_or_else(|_| "{}".into()),
+            );
         }
         let mut out = Vec::new();
         for (user, ip) in pairs {
             let key = format!("{user}|{ip}");
-            let start = self
-                .seen
-                .lock()
-                .unwrap()
-                .get(&key)
-                .copied()
-                .unwrap_or(now);
+            let start = self.seen.lock().unwrap().get(&key).copied().unwrap_or(now);
             let age = now.saturating_sub(start);
             out.push(IpView {
                 address: ip.clone(),
                 connected_h: humanize_nosec(age),
                 kind: self.lookup_kind(ip).as_str(),
+                user_agents: Vec::new(),
             });
         }
         out
@@ -262,7 +264,13 @@ fn disk_geo(ip: &str) -> Option<IpKind> {
 fn geo_path(ip: &str) -> PathBuf {
     let slug: String = ip
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == ':' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == ':' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     PathBuf::from(GEO_DIR).join(format!("{slug}.json"))
 }
@@ -413,8 +421,12 @@ fn http_get_ip_api(ip: &str) -> Option<String> {
     use std::net::ToSocketAddrs;
     let addr = "ip-api.com:80".to_socket_addrs().ok()?.next()?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_millis(1200))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_secs(1))).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(1200)))
+        .ok()?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(1)))
+        .ok()?;
     let path = format!(
         "/json/{ip}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query"
     );
@@ -724,7 +736,10 @@ fn read_host_uptime() -> String {
 
 fn read_tt_version() -> String {
     let bin = std::path::Path::new("/opt/trusttunnel/trusttunnel_endpoint");
-    let out = std::process::Command::new(bin).arg("--version").output().ok();
+    let out = std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .ok();
     let Some(out) = out else {
         return "—".into();
     };
@@ -777,7 +792,14 @@ fn second_top_frame(raw: &str) -> Option<String> {
         .map(|(i, _)| i)
         .collect();
     let start = *starts.get(1).or_else(|| starts.first())?;
-    Some(lines[start..].iter().copied().take(50).collect::<Vec<_>>().join("\n"))
+    Some(
+        lines[start..]
+            .iter()
+            .copied()
+            .take(50)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 fn run_top(args: &[&str]) -> Option<String> {

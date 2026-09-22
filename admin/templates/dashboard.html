@@ -49,6 +49,7 @@
      data-geo-loading="{{ t.geo_loading }}"
      data-geo-error="{{ t.geo_error }}"
      data-geo-private="{{ t.geo_private }}"
+     data-geo-client="{{ t.geo_client }}"
      data-dest-title="{{ t.dest_title }}"
      data-dest-loading="{{ t.dest_loading }}"
      data-dest-error="{{ t.dest_error }}"
@@ -140,7 +141,12 @@
     var ipBtn = t.closest('.js-ip');
     if (ipBtn) {
       var ip = ipBtn.getAttribute('data-ip') || '';
-      openIp(ip);
+      var agents = [];
+      try {
+        var parsed = JSON.parse(ipBtn.getAttribute('data-agents') || '[]');
+        if (Array.isArray(parsed)) agents = parsed;
+      } catch (err) {}
+      openIp(ip, agents);
       return;
     }
     var lockBtn = t.closest('.js-lock');
@@ -194,7 +200,7 @@
     }
   });
 
-  function openIp(ip) {
+  function openIp(ip, agents) {
     destModal.classList.add('hidden');
     modal.classList.remove('hidden');
     modalTitle.textContent = ip;
@@ -232,6 +238,16 @@
         if (d.proxy) flags.push('proxy');
         if (d.hosting) flags.push('hosting');
         if (flags.length) row('flags', flags.join(', '));
+        html += '<div class="mt-3 pt-2 border-t border-slate-100">';
+        html += '<div class="text-slate-500 text-xs mb-1">' + escapeHtml(i18n.getAttribute('data-geo-client') || 'Client') + '</div>';
+        if (agents && agents.length) {
+          for (var i = 0; i < agents.length; i++) {
+            html += '<div class="text-sm text-slate-800 break-all">' + escapeHtml(String(agents[i])) + '</div>';
+          }
+        } else {
+          html += '<div class="text-sm text-slate-400">—</div>';
+        }
+        html += '</div>';
         modalBody.innerHTML = html;
       })
       .catch(function () {

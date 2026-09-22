@@ -149,7 +149,7 @@
                 {% endif %}
               {% endif %}
             {% endif %}
-            <button type="button" class="js-ip font-mono text-indigo-600 underline decoration-dotted text-left" data-ip="{{ ip.address }}">{{ ip.address }}</button>
+            <button type="button" class="js-ip font-mono text-indigo-600 underline decoration-dotted text-left" data-ip="{{ ip.address }}" data-agents="{{ ip.agents_json() }}">{{ ip.address }}</button>
             <span class="user-age text-slate-400">{{ ip.connected_h }}</span>
           </div>
           {% endfor %}

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin IP modal lists CONNECT `User-Agent` strings under the geo
+  block; several devices behind one NAT IP show as several lines.
 - [Fix] Reverse proxy sends `X-Forwarded-For` (TLS client IP) so admin
   Telegram login alerts are not 127.0.0.1; vpn/users/rules saves defer
   endpoint restart so the spinner can finish through :443.

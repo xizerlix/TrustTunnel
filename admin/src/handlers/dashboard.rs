@@ -1,6 +1,4 @@
-use crate::apply::{
-    read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show,
-};
+use crate::apply::{read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show};
 use crate::auth::{verify_csrf, Authenticated};
 use crate::i18n::{self, I18n};
 use crate::live::IpView;
@@ -107,13 +105,19 @@ struct UsageUser {
     outbound: u64,
 }
 
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(crate) struct LiveIp {
+    address: String,
+    user_agents: Vec<String>,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct LiveClient {
     username: String,
     sessions: u64,
     inbound: u64,
     outbound: u64,
-    ips: Vec<String>,
+    ips: Vec<LiveIp>,
     quota_exceeded: bool,
     limit: Option<u64>,
 }
@@ -305,24 +309,21 @@ fn parse_one_client(v: &Value) -> Option<LiveClient> {
         v.as_u64()
             .or_else(|| v.as_i64().and_then(|n| u64::try_from(n).ok()))
     });
-    let mut ips: Vec<String> = Vec::new();
+    let mut ips: Vec<LiveIp> = Vec::new();
     if let Some(arr) = obj.get("ips").and_then(Value::as_array) {
         for item in arr {
-            if let Some(s) = item.as_str() {
-                if !s.is_empty() {
-                    ips.push(s.to_string());
-                }
-            } else if let Some(address) = item.get("address").and_then(Value::as_str) {
-                if !address.is_empty() {
-                    ips.push(address.to_string());
-                }
+            if let Some(ip) = parse_live_ip(item) {
+                ips.push(ip);
             }
         }
     }
     if ips.is_empty() {
         if let Some(ip) = obj.get("ip").and_then(Value::as_str) {
             if !ip.is_empty() {
-                ips.push(ip.to_string());
+                ips.push(LiveIp {
+                    address: ip.to_string(),
+                    user_agents: Vec::new(),
+                });
             }
         }
     }
@@ -334,6 +335,41 @@ fn parse_one_client(v: &Value) -> Option<LiveClient> {
         ips,
         quota_exceeded,
         limit,
+    })
+}
+
+fn parse_live_ip(item: &Value) -> Option<LiveIp> {
+    if let Some(s) = item.as_str() {
+        if s.is_empty() {
+            return None;
+        }
+        return Some(LiveIp {
+            address: s.to_string(),
+            user_agents: Vec::new(),
+        });
+    }
+    let address = item.get("address")?.as_str()?.to_string();
+    if address.is_empty() {
+        return None;
+    }
+    let mut user_agents = Vec::new();
+    if let Some(arr) = item.get("user_agents").and_then(Value::as_array) {
+        for ua in arr {
+            let Some(s) = ua.as_str() else {
+                continue;
+            };
+            let s = s.trim();
+            if s.is_empty() {
+                continue;
+            }
+            if !user_agents.iter().any(|x| x == s) {
+                user_agents.push(s.to_string());
+            }
+        }
+    }
+    Some(LiveIp {
+        address,
+        user_agents,
     })
 }
 
@@ -632,7 +668,7 @@ async fn collect(state: &AppState) -> Stats {
     for c in live_list {
         session_total = session_total.saturating_add(c.sessions);
         for ip in &c.ips {
-            all_ips.insert(ip.clone());
+            all_ips.insert(ip.address.clone());
         }
         by_user.insert(c.username.clone(), c);
     }
@@ -641,7 +677,7 @@ async fn collect(state: &AppState) -> Stats {
     for (user, c) in &by_user {
         if c.sessions > 0 || !c.ips.is_empty() {
             for ip in &c.ips {
-                pairs.push((user.clone(), ip.clone()));
+                pairs.push((user.clone(), ip.address.clone()));
             }
         }
     }
@@ -651,7 +687,12 @@ async fn collect(state: &AppState) -> Stats {
         .await
         .unwrap_or_else(|_| Vec::new());
     let mut by_user_ips: HashMap<String, Vec<IpView>> = HashMap::new();
-    for (pair, view) in pairs.into_iter().zip(views.into_iter()) {
+    for (pair, mut view) in pairs.into_iter().zip(views.into_iter()) {
+        if let Some(c) = by_user.get(&pair.0) {
+            if let Some(live_ip) = c.ips.iter().find(|i| i.address == view.address) {
+                view.user_agents = live_ip.user_agents.clone();
+            }
+        }
         by_user_ips.entry(pair.0).or_default().push(view);
     }
 
@@ -1311,7 +1352,8 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].username, "alice");
         assert_eq!(parsed[0].sessions, 3);
-        assert_eq!(parsed[0].ips, vec!["1.2.3.4"]);
+        assert_eq!(parsed[0].ips[0].address, "1.2.3.4");
+        assert!(parsed[0].ips[0].user_agents.is_empty());
     }
 
     #[test]
@@ -1323,7 +1365,7 @@ mod tests {
             "ip": "10.0.0.2"
         }]);
         let parsed = parse_live_clients(&v);
-        assert_eq!(parsed[0].ips, vec!["10.0.0.2"]);
+        assert_eq!(parsed[0].ips[0].address, "10.0.0.2");
     }
 
     #[test]
@@ -1336,7 +1378,25 @@ mod tests {
         let parsed = parse_live_clients(&v);
         assert_eq!(parsed[0].username, "carol");
         assert_eq!(parsed[0].sessions, 2);
-        assert_eq!(parsed[0].ips, vec!["8.8.8.8"]);
+        assert_eq!(parsed[0].ips[0].address, "8.8.8.8");
+    }
+
+    #[test]
+    fn live_clients_keep_two_user_agents_on_one_ip() {
+        let v = json!([{
+            "username": "alice",
+            "sessions": 2,
+            "ips": [{
+                "address": "203.0.113.10",
+                "user_agents": ["Android TrustTunnel", "iOS TrustTunnel"]
+            }]
+        }]);
+        let parsed = parse_live_clients(&v);
+        assert_eq!(parsed[0].ips[0].address, "203.0.113.10");
+        assert_eq!(
+            parsed[0].ips[0].user_agents,
+            vec!["Android TrustTunnel", "iOS TrustTunnel"]
+        );
     }
 
     #[test]
