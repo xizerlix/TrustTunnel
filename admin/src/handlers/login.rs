@@ -25,9 +25,15 @@ pub struct LoginTemplate {
     pub lang: &'static str,
     pub csrf: String,
     pub title: String,
+    pub totp_step: bool,
 }
 
-fn login_page(headers: &HeaderMap, error: Option<String>, username: String) -> LoginTemplate {
+fn login_page(
+    headers: &HeaderMap,
+    error: Option<String>,
+    username: String,
+    totp_step: bool,
+) -> LoginTemplate {
     let lang = i18n::from_headers(headers);
     let t = i18n::t(lang);
     LoginTemplate {
@@ -37,11 +43,12 @@ fn login_page(headers: &HeaderMap, error: Option<String>, username: String) -> L
         t,
         lang: lang.as_str(),
         csrf: String::new(),
+        totp_step,
     }
 }
 
 pub async fn login_form(headers: HeaderMap) -> Response {
-    login_page(&headers, None, String::new()).into_response()
+    login_page(&headers, None, String::new(), false).into_response()
 }
 
 pub async fn login_submit(
@@ -58,13 +65,19 @@ pub async fn login_submit(
         .await;
     if !allowed {
         if notify_limited {
+            state.login_log.record(ip, "limited");
             notify_tg(state.telegram.clone(), move |tg| {
                 tg.notify_login_limited(ip)
             });
         }
         let t = i18n::t(i18n::from_headers(&headers));
-        let mut resp =
-            login_page(&headers, Some(t.too_many_logins.into()), form.username).into_response();
+        let mut resp = login_page(
+            &headers,
+            Some(t.too_many_logins.into()),
+            form.username,
+            false,
+        )
+        .into_response();
         *resp.status_mut() = StatusCode::TOO_MANY_REQUESTS;
         return resp;
     }
@@ -89,17 +102,110 @@ pub async fn login_submit(
 
     if !verified {
         let attempted = form.username.clone();
+        state.login_log.record(ip, "fail");
         notify_tg(state.telegram.clone(), move |tg| {
             tg.notify_login_fail(ip, &attempted)
         });
         tokio::time::sleep(Duration::from_millis(300)).await;
         let t = i18n::t(i18n::from_headers(&headers));
-        let mut resp =
-            login_page(&headers, Some(t.invalid_login.into()), form.username).into_response();
+        let mut resp = login_page(&headers, Some(t.invalid_login.into()), form.username, false)
+            .into_response();
         *resp.status_mut() = StatusCode::UNAUTHORIZED;
         return resp;
     }
 
+    let totp_on = crate::config::AdminConfig::load_or_default(&admin_toml).totp_on();
+    if totp_on {
+        let token = crate::auth::random_token();
+        state
+            .totp_pending
+            .write()
+            .await
+            .insert(token.clone(), std::time::Instant::now());
+        let mut resp_headers = HeaderMap::new();
+        let secure_flag = if state.secure_cookies { "; Secure" } else { "" };
+        let cookie = format!(
+            "{}={}; Path=/; Max-Age=300; HttpOnly; SameSite=Strict{secure_flag}",
+            crate::auth::TOTP_COOKIE,
+            token
+        );
+        if let Ok(v) = cookie.parse::<HeaderValue>() {
+            resp_headers.append(axum::http::header::SET_COOKIE, v);
+        }
+        let mut resp = login_page(&headers, None, String::new(), true).into_response();
+        resp.headers_mut().extend(resp_headers);
+        return resp;
+    }
+
+    finish_login(&state, ip).await
+}
+
+pub async fn login_totp(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(form): Form<TotpLoginForm>,
+) -> Response {
+    let ip = login_ip(&headers, Some(addr.ip()));
+    let global = state.config.login_rate_per_min.saturating_mul(3).max(8);
+    let (allowed, notify_limited) = state
+        .login_limiter
+        .check(ip, state.config.login_rate_per_min, global)
+        .await;
+    if !allowed {
+        if notify_limited {
+            state.login_log.record(ip, "limited");
+            notify_tg(state.telegram.clone(), move |tg| {
+                tg.notify_login_limited(ip)
+            });
+        }
+        let t = i18n::t(i18n::from_headers(&headers));
+        let mut resp = login_page(
+            &headers,
+            Some(t.too_many_logins.into()),
+            String::new(),
+            true,
+        )
+        .into_response();
+        *resp.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+        return resp;
+    }
+    let Some(token) = crate::auth::extract_totp_cookie(&headers) else {
+        let t = i18n::t(i18n::from_headers(&headers));
+        return login_page(&headers, Some(t.invalid_login.into()), String::new(), false)
+            .into_response();
+    };
+    {
+        let mut pending = state.totp_pending.write().await;
+        let fresh = pending
+            .get(&token)
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(300));
+        if !fresh {
+            pending.remove(&token);
+            let t = i18n::t(i18n::from_headers(&headers));
+            return login_page(&headers, Some(t.invalid_login.into()), String::new(), false)
+                .into_response();
+        }
+    }
+    let cfg = crate::config::AdminConfig::load_or_default(&state.paths.admin_toml);
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    if !cfg.totp_on() || !crate::totp::verify(&cfg.totp_secret, &form.totp_code, now) {
+        state.login_log.record(ip, "totp_fail");
+        notify_tg(state.telegram.clone(), move |tg| {
+            tg.notify_login_fail(ip, "totp")
+        });
+        let t = i18n::t(i18n::from_headers(&headers));
+        let mut resp =
+            login_page(&headers, Some(t.totp_bad_code.into()), String::new(), true).into_response();
+        *resp.status_mut() = StatusCode::UNAUTHORIZED;
+        return resp;
+    }
+    state.totp_pending.write().await.remove(&token);
+    finish_login(&state, ip).await
+}
+
+async fn finish_login(state: &AppState, ip: IpAddr) -> Response {
+    state.login_log.record(ip, "ok");
     notify_tg(state.telegram.clone(), move |tg| tg.notify_login_ok(ip));
     let session = state
         .sessions
@@ -123,6 +229,10 @@ pub async fn login_submit(
         )
     );
     if let Ok(v) = csrf_header.parse::<HeaderValue>() {
+        resp_headers.append(axum::http::header::SET_COOKIE, v);
+    }
+    let clear_totp = format!("{}=; Path=/; Max-Age=0; HttpOnly", crate::auth::TOTP_COOKIE);
+    if let Ok(v) = clear_totp.parse::<HeaderValue>() {
         resp_headers.append(axum::http::header::SET_COOKIE, v);
     }
     (resp_headers, Redirect::to("/dashboard")).into_response()
@@ -216,6 +326,11 @@ pub struct CsrfJson {
 
 pub async fn csrf_token(Authenticated(session): Authenticated) -> Json<CsrfJson> {
     Json(CsrfJson { csrf: session.csrf })
+}
+
+#[derive(Deserialize)]
+pub struct TotpLoginForm {
+    pub totp_code: String,
 }
 
 pub fn login_ip(headers: &HeaderMap, peer: Option<IpAddr>) -> IpAddr {

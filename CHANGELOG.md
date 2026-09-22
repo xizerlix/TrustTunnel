@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin Settings 2FA (TOTP) and Logs sign-in history (time + IP).
 - [Feature] Admin Settings has Backup: a zip of VPN/admin data, crontab,
   bot/monitor scripts, and `restore.sh` for a new host (DuckDNS + Let's
   Encrypt, endpoint and admin).

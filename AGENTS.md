@@ -230,6 +230,10 @@ protocol/deep-link format, library API) when relevant.
    Restore MUST issue a new Let's Encrypt cert for a new hostname
    (DuckDNS instructions); do not reuse the old domain. Do not put backup
    zip contents in git.
+   Admin 2FA is TOTP (`totp_enabled` / `totp_secret` in `admin.toml`). The
+   shared secret MUST stay on the server; do not commit it. Login history
+   lives next to `admin.toml` as `login_history.json` (time + IP) and is
+   shown from Logs → Sign-in history.
    Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs
    (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless

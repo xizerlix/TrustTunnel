@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 
 pub const SESSION_COOKIE: &str = "tt_admin_session";
 pub const CSRF_COOKIE: &str = "tt_admin_csrf";
+pub const TOTP_COOKIE: &str = "tt_admin_totp";
 
 #[derive(Clone)]
 pub struct Session {
@@ -166,9 +167,10 @@ pub fn build_clear_cookies() -> Vec<(String, String)> {
             SESSION_COOKIE.to_string(),
             "; Path=/; Max-Age=0; HttpOnly".to_string(),
         ),
+        (CSRF_COOKIE.to_string(), "; Path=/; Max-Age=0".to_string()),
         (
-            CSRF_COOKIE.to_string(),
-            "; Path=/; Max-Age=0".to_string(),
+            TOTP_COOKIE.to_string(),
+            "; Path=/; Max-Age=0; HttpOnly".to_string(),
         ),
     ]
 }
@@ -189,17 +191,28 @@ pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
         .filter_map(|v| v.to_str().ok())
         .flat_map(|s| s.split(';'))
         .map(|s| s.trim())
-        .find_map(|c| c.strip_prefix(&format!("{SESSION_COOKIE}=")).map(String::from))
+        .find_map(|c| {
+            c.strip_prefix(&format!("{SESSION_COOKIE}="))
+                .map(String::from)
+        })
 }
 
 pub fn extract_csrf_cookie(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, CSRF_COOKIE)
+}
+
+pub fn extract_totp_cookie(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, TOTP_COOKIE)
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(axum::http::header::COOKIE)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|s| s.split(';'))
         .map(|s| s.trim())
-        .find_map(|c| c.strip_prefix(&format!("{CSRF_COOKIE}=")).map(String::from))
+        .find_map(|c| c.strip_prefix(&format!("{name}=")).map(String::from))
 }
 
 pub struct Authenticated(pub Session);
@@ -230,9 +243,7 @@ pub async fn verify_csrf(
     headers: &HeaderMap,
     session: &crate::auth::Session,
 ) -> Result<(), AdminError> {
-    let header_csrf = headers
-        .get("x-csrf-token")
-        .and_then(|v| v.to_str().ok());
+    let header_csrf = headers.get("x-csrf-token").and_then(|v| v.to_str().ok());
     let cookie_csrf = extract_csrf_cookie(headers);
     let csrf: Option<&str> = header_csrf.or(cookie_csrf.as_deref());
     match csrf {

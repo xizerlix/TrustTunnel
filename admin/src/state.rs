@@ -1,8 +1,10 @@
 use crate::auth::{LoginLimiter, SessionStore};
 use crate::config::AdminConfig;
 use crate::live::{HostSnapshot, LiveCache};
+use crate::login_log::LoginLog;
 use crate::paths::TrustTunnelPaths;
 use crate::telegram::Telegram;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -19,6 +21,9 @@ pub struct AppState {
     pub slow: Arc<SlowInfo>,
     pub telegram: Option<Telegram>,
     pub series: Arc<crate::traffic_series::SeriesStore>,
+    pub totp_setup: Arc<RwLock<Option<String>>>,
+    pub totp_pending: Arc<RwLock<HashMap<String, Instant>>>,
+    pub login_log: Arc<LoginLog>,
 }
 
 pub struct SlowInfo {
@@ -44,7 +49,10 @@ impl SlowInfo {
         })
     }
 
-    pub fn host_and_cert(&self, cert_path: Option<&str>) -> (HostSnapshot, Option<(String, String)>) {
+    pub fn host_and_cert(
+        &self,
+        cert_path: Option<&str>,
+    ) -> (HostSnapshot, Option<(String, String)>) {
         let mut g = self.inner.lock().unwrap();
         if g.host_at.elapsed() > Duration::from_secs(5) {
             g.host = crate::live::parse_host_snapshot();

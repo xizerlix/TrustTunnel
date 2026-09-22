@@ -24,6 +24,13 @@ pub struct LogsTemplate {
     pub refresh: String,
     pub system: bool,
     pub tab: &'static str,
+    pub login_rows: Vec<LoginRow>,
+}
+
+pub struct LoginRow {
+    pub time: String,
+    pub ip: String,
+    pub event: String,
 }
 
 #[derive(Deserialize)]
@@ -99,6 +106,7 @@ pub async fn logs_view(
         refresh,
         system,
         tab: "logs",
+        login_rows: Vec::new(),
     }
     .into_response()
 }
@@ -117,10 +125,7 @@ pub async fn logs_data(
     plain_text(content)
 }
 
-pub async fn htop_view(
-    Authenticated(session): Authenticated,
-    headers: HeaderMap,
-) -> Response {
+pub async fn htop_view(Authenticated(session): Authenticated, headers: HeaderMap) -> Response {
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
     let content = tokio::task::spawn_blocking(htop_snapshot)
@@ -138,6 +143,7 @@ pub async fn htop_view(
         refresh: "10".into(),
         system: false,
         tab: "htop",
+        login_rows: Vec::new(),
     }
     .into_response()
 }
@@ -147,4 +153,57 @@ pub async fn htop_data(Authenticated(_session): Authenticated) -> Response {
         .await
         .unwrap_or_else(|_| "htop unavailable".into());
     plain_text(content)
+}
+
+fn event_label(t: &I18n, event: &str) -> String {
+    match event {
+        "ok" => t.login_ev_ok.to_string(),
+        "fail" => t.login_ev_fail.to_string(),
+        "limited" => t.login_ev_limited.to_string(),
+        "totp_fail" => t.login_ev_totp_fail.to_string(),
+        other => other.to_string(),
+    }
+}
+
+pub async fn logins_view(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+) -> Response {
+    let lang = i18n::from_headers(&headers);
+    let t = i18n::t(lang);
+    let login_rows: Vec<LoginRow> = state
+        .login_log
+        .list()
+        .into_iter()
+        .map(|ev| {
+            let time = chrono::DateTime::from_timestamp(ev.t, 0)
+                .map(|dt| {
+                    dt.with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string()
+                })
+                .unwrap_or_else(|| ev.t.to_string());
+            LoginRow {
+                time,
+                ip: ev.ip,
+                event: event_label(&t, &ev.event),
+            }
+        })
+        .collect();
+    LogsTemplate {
+        title: t.tab_logins.into(),
+        username: session.username,
+        csrf: session.csrf,
+        t,
+        lang: lang.as_str(),
+        lines: 0,
+        content: String::new(),
+        error: None,
+        refresh: "off".into(),
+        system: false,
+        tab: "logins",
+        login_rows,
+    }
+    .into_response()
 }

@@ -42,6 +42,7 @@ pub fn collect_live(root: PathBuf, admin_toml: PathBuf) -> BackupInput {
         .unwrap_or_default();
     let mut extra: Vec<PathBuf> = EXTRA_PATHS.iter().map(PathBuf::from).collect();
     extra.push(admin_toml.clone());
+    extra.push(crate::login_log::history_path(&admin_toml));
     for p in KNOWN_SCRIPTS {
         extra.push(PathBuf::from(p));
     }

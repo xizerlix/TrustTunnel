@@ -5,7 +5,35 @@
 <div class="flex flex-wrap gap-2 mb-4">
   <a href="/logs" class="px-3 py-2 rounded {% if tab == "logs" %}bg-indigo-600 text-white{% else %}bg-white border border-slate-300{% endif %}">{{ t.tab_service }}</a>
   <a href="/logs/htop" class="px-3 py-2 rounded {% if tab == "htop" %}bg-indigo-600 text-white{% else %}bg-white border border-slate-300{% endif %}">{{ t.tab_htop }}</a>
+  <a href="/logs/logins" class="px-3 py-2 rounded {% if tab == "logins" %}bg-indigo-600 text-white{% else %}bg-white border border-slate-300{% endif %}">{{ t.tab_logins }}</a>
 </div>
+
+{% if tab == "logins" %}
+  {% if login_rows.is_empty() %}
+    <p class="text-slate-500">{{ t.login_empty }}</p>
+  {% else %}
+  <div class="bg-white rounded shadow overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left border-b border-slate-200">
+          <th class="p-3">{{ t.login_time }}</th>
+          <th class="p-3">{{ t.login_ip }}</th>
+          <th class="p-3">{{ t.login_event }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in login_rows %}
+        <tr class="border-b border-slate-100">
+          <td class="p-3 whitespace-nowrap font-mono">{{ row.time }}</td>
+          <td class="p-3 font-mono">{{ row.ip }}</td>
+          <td class="p-3">{{ row.event }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+{% else %}
 
 {% if tab == "logs" %}
 <p class="text-sm text-slate-500 mb-3">{{ t.logs_help }}</p>
@@ -81,4 +109,5 @@
   arm();
 })();
 </script>
+{% endif %}
 {% endblock %}

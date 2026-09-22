@@ -9,10 +9,12 @@ mod form;
 mod handlers;
 mod i18n;
 mod live;
+mod login_log;
 mod models;
 mod paths;
 mod state;
 mod telegram;
+mod totp;
 mod traffic_series;
 
 use crate::auth::{LoginLimiter, SessionStore};
@@ -112,6 +114,11 @@ async fn serve(
         slow: crate::state::SlowInfo::new(),
         telegram,
         series,
+        totp_setup: Arc::new(tokio::sync::RwLock::new(None)),
+        totp_pending: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+        login_log: Arc::new(crate::login_log::LoginLog::load(
+            crate::login_log::history_path(&admin_toml),
+        )),
     };
 
     spawn_cleanup(state.clone());
@@ -139,6 +146,8 @@ fn spawn_cleanup(state: AppState) {
                 let ttl = Duration::from_secs(state.config.session_ttl_secs);
                 state.sessions.cleanup_expired(ttl).await;
                 state.login_limiter.cleanup_expired().await;
+                let mut pending = state.totp_pending.write().await;
+                pending.retain(|_, at| at.elapsed() < Duration::from_secs(300));
             }
             let root = state.paths.root.clone();
             let series = state.series.clone();
@@ -160,6 +169,7 @@ fn build_router(state: AppState) -> Router {
             "/login",
             get(handlers::login::login_form).post(handlers::login::login_submit),
         )
+        .route("/login/totp", post(handlers::login::login_totp))
         .route("/logout", post(handlers::login::logout))
         .route("/health-check", get(health_check))
         .route("/lang", get(handlers::login::set_lang))
@@ -206,6 +216,7 @@ fn build_router(state: AppState) -> Router {
         .route("/logs/data", get(handlers::logs::logs_data))
         .route("/logs/htop", get(handlers::logs::htop_view))
         .route("/logs/htop/data", get(handlers::logs::htop_data))
+        .route("/logs/logins", get(handlers::logs::logins_view))
         .route(
             "/settings",
             get(handlers::settings::settings_form).post(handlers::settings::settings_password),
@@ -213,6 +224,15 @@ fn build_router(state: AppState) -> Router {
         .route(
             "/settings/backup",
             post(handlers::settings::settings_backup),
+        )
+        .route("/settings/totp/start", post(handlers::settings::totp_start))
+        .route(
+            "/settings/totp/confirm",
+            post(handlers::settings::totp_confirm),
+        )
+        .route(
+            "/settings/totp/disable",
+            post(handlers::settings::totp_disable),
         )
         .route("/csrf", get(handlers::login::csrf_token))
         .route("/static/admin.css", get(admin_css))
@@ -266,12 +286,15 @@ fn init_admin(
         anyhow::bail!("password must be at least 10 characters");
     }
     let hash = config::hash_password(&plain)?;
-    let cfg = AdminConfig {
-        bind,
-        bcrypt_hash: hash,
-        session_ttl_secs: 1800,
-        login_rate_per_min: 5,
-    };
+    let mut cfg = AdminConfig::load_or_default(&admin_toml);
+    cfg.bind = bind;
+    cfg.bcrypt_hash = hash;
+    if cfg.session_ttl_secs == 0 {
+        cfg.session_ttl_secs = 1800;
+    }
+    if cfg.login_rate_per_min == 0 {
+        cfg.login_rate_per_min = 5;
+    }
     if let Some(parent) = admin_toml.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -324,9 +347,13 @@ mod tests {
         }
         assert!(include_str!("../templates/settings.html").contains("/settings/backup"));
         assert!(include_str!("../templates/settings.html").contains("backup_help"));
+        assert!(include_str!("../templates/settings.html").contains("totp_help"));
+        assert!(include_str!("../templates/logs.html").contains("/logs/logins"));
         let login = include_str!("../templates/login.html");
         assert!(login.contains("MDM Panel"));
         assert!(!login.contains("TrustTunnel"));
+        assert!(login.contains("totp_step"));
+        assert!(login.contains("/login/totp"));
         let dash = include_str!("../templates/dashboard_data.html");
         assert!(dash.contains("js-lock"));
         assert!(dash.contains("width=\"22\""));

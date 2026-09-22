@@ -27,10 +27,53 @@
   <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.update_password }}</button>
 </form>
 
+<h2 class="text-xl font-semibold mt-10 mb-2">{{ t.totp_title }}</h2>
+<div class="max-w-md bg-white p-6 rounded shadow space-y-4">
+  <p class="text-slate-600 text-sm">{{ t.totp_help }}</p>
+  {% if totp_on %}
+    <p class="text-sm font-medium text-emerald-800">{{ t.totp_on_label }}</p>
+    <form method="post" action="/settings/totp/disable" class="space-y-3">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="block">
+        <span class="block text-sm font-medium mb-1">{{ t.totp_code }}</span>
+        <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="8" required>
+      </label>
+      <button type="submit" class="bg-slate-700 text-white px-6 py-2 rounded font-medium hover:bg-slate-800">{{ t.totp_disable }}</button>
+    </form>
+  {% else %}
+    {% if let Some(secret) = totp_secret %}
+    <p class="text-slate-600 text-sm">{{ t.totp_setup_help }}</p>
+    <div>
+      <span class="block text-sm font-medium mb-1">{{ t.totp_secret_label }}</span>
+      <code class="block text-xs break-all bg-slate-100 p-2 rounded">{{ secret }}</code>
+    </div>
+    {% if let Some(uri) = totp_otpauth %}
+    <div>
+      <span class="block text-sm font-medium mb-1">{{ t.totp_uri_label }}</span>
+      <code class="block text-xs break-all bg-slate-100 p-2 rounded">{{ uri }}</code>
+    </div>
+    {% endif %}
+    <form method="post" action="/settings/totp/confirm" class="space-y-3">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="block">
+        <span class="block text-sm font-medium mb-1">{{ t.totp_code }}</span>
+        <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="8" required autofocus>
+      </label>
+      <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.totp_confirm }}</button>
+    </form>
+    {% else %}
+    <form method="post" action="/settings/totp/start">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.totp_enable }}</button>
+    </form>
+    {% endif %}
+  {% endif %}
+</div>
+
 <h2 class="text-xl font-semibold mt-10 mb-2">{{ t.backup_title }}</h2>
-<p class="text-slate-600 text-sm max-w-2xl mb-4">{{ t.backup_help }}</p>
-<form method="post" action="/settings/backup" class="max-w-md bg-white p-6 rounded shadow">
+<form method="post" action="/settings/backup" class="max-w-md bg-white p-6 rounded shadow space-y-4">
   <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p class="text-slate-600 text-sm">{{ t.backup_help }}</p>
   <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.backup_button }}</button>
 </form>
 {% endblock %}

@@ -7,6 +7,24 @@
   <link rel="stylesheet" href="/static/admin.css?v=hostcharts10">
 </head>
 <body class="min-h-screen flex items-center justify-center">
+  {% if totp_step %}
+  <form method="post" action="/login/totp" class="bg-white p-8 rounded-lg shadow-md w-96 space-y-4">
+    <h1 class="text-2xl font-semibold text-center">{{ t.sign_in }}</h1>
+    {% if let Some(e) = error %}
+      <div class="bg-rose-100 text-rose-800 p-3 rounded text-sm">{{ e }}</div>
+    {% endif %}
+    <label class="block">
+      <span class="block text-sm font-medium mb-1">{{ t.totp_prompt }}</span>
+      <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="8" required autofocus>
+    </label>
+    <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded font-medium hover:bg-indigo-700">{{ t.sign_in }}</button>
+    <div class="text-center text-sm text-slate-500">
+      <a href="/lang?set=en&next=/login" class="{% if lang == "en" %}font-semibold{% endif %}">EN</a>
+      ·
+      <a href="/lang?set=ru&next=/login" class="{% if lang == "ru" %}font-semibold{% endif %}">RU</a>
+    </div>
+  </form>
+  {% else %}
   <form method="post" action="/login" class="bg-white p-8 rounded-lg shadow-md w-96 space-y-4">
     <h1 class="text-2xl font-semibold text-center">{{ t.sign_in }}</h1>
     {% if let Some(e) = error %}
@@ -27,5 +45,6 @@
       <a href="/lang?set=ru&next=/login" class="{% if lang == "ru" %}font-semibold{% endif %}">RU</a>
     </div>
   </form>
+  {% endif %}
 </body>
 </html>
