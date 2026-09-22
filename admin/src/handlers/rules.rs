@@ -1,4 +1,4 @@
-use crate::apply::{apply, ApplyKind};
+use crate::apply::ApplyKind;
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::error::{AdminError, AdminResult};
 use crate::form::{form_col, form_lists};
@@ -7,7 +7,7 @@ use crate::models::{RuleAction, RuleEntry, RulesToml};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 
 #[derive(Template)]
@@ -33,7 +33,11 @@ fn page(
 ) -> RulesTemplate {
     let lang = i18n::from_headers(headers);
     let t = i18n::t(lang);
-    let action_strs: Vec<String> = rules.rules.iter().map(|r| action_to_str(&r.action)).collect();
+    let action_strs: Vec<String> = rules
+        .rules
+        .iter()
+        .map(|r| action_to_str(&r.action))
+        .collect();
     RulesTemplate {
         title: t.rules.into(),
         username: session.username.clone(),
@@ -96,20 +100,15 @@ pub async fn rules_save(
     let serialized = toml::to_string_pretty(&new_rules).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.rules_toml, &serialized)?;
     let t = i18n::t(i18n::from_headers(&headers));
-    let apply_result = apply(&state.paths, ApplyKind::FullRestart);
-    let msg = crate::apply::format_apply(&t, &apply_result);
-    let err = if apply_result.is_err() {
-        Some(msg.clone())
-    } else {
-        None
-    };
-    let resp = page(&session, &headers, new_rules, Some(msg), err).into_response();
-    let s = if apply_result.is_err() {
-        StatusCode::INTERNAL_SERVER_ERROR
-    } else {
-        StatusCode::OK
-    };
-    Ok((s, resp).into_response())
+    crate::apply::schedule_apply(state.paths.clone(), ApplyKind::FullRestart);
+    Ok(page(
+        &session,
+        &headers,
+        new_rules,
+        Some(t.apply_restart_queued.to_string()),
+        None,
+    )
+    .into_response())
 }
 
 fn load_or_default(path: &std::path::Path) -> AdminResult<RulesToml> {
@@ -133,13 +132,15 @@ mod tests {
 
     #[test]
     fn interleaved_cidr_parses() {
-        let map = form_lists("cidr=1.1.1.0/24&action=deny&cidr=&client_random_prefix=&action=allow");
+        let map =
+            form_lists("cidr=1.1.1.0/24&action=deny&cidr=&client_random_prefix=&action=allow");
         assert_eq!(form_col(&map, "cidr").len(), 2);
     }
 
     #[test]
     fn empty_cidr_and_prefix_are_skipped() {
-        let map = form_lists("cidr=&client_random_prefix=&action=allow&cidr=10.0.0.0/8&action=deny");
+        let map =
+            form_lists("cidr=&client_random_prefix=&action=allow&cidr=10.0.0.0/8&action=deny");
         let cidrs = form_col(&map, "cidr");
         let prefixes = form_col(&map, "client_random_prefix");
         let actions = form_col(&map, "action");

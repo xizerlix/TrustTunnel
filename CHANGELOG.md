@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Reverse proxy sends `X-Forwarded-For` (TLS client IP) so admin
+  Telegram login alerts are not 127.0.0.1; vpn/users/rules saves defer
+  endpoint restart so the spinner can finish through :443.
 - [Fix] Reverse proxy forwards POST/PUT body to the origin before waiting
   for a response (admin login behind `path_mask` no longer deadlocks).
 - [Fix] Admin dashboard charts match the 1.1.20 bar layout; the highlight

@@ -58,11 +58,13 @@ pub async fn login_submit(
         .await;
     if !allowed {
         if notify_limited {
-            notify_tg(state.telegram.clone(), move |tg| tg.notify_login_limited(ip));
+            notify_tg(state.telegram.clone(), move |tg| {
+                tg.notify_login_limited(ip)
+            });
         }
         let t = i18n::t(i18n::from_headers(&headers));
-        let mut resp = login_page(&headers, Some(t.too_many_logins.into()), form.username)
-            .into_response();
+        let mut resp =
+            login_page(&headers, Some(t.too_many_logins.into()), form.username).into_response();
         *resp.status_mut() = StatusCode::TOO_MANY_REQUESTS;
         return resp;
     }
@@ -213,9 +215,7 @@ pub struct CsrfJson {
 }
 
 pub async fn csrf_token(Authenticated(session): Authenticated) -> Json<CsrfJson> {
-    Json(CsrfJson {
-        csrf: session.csrf,
-    })
+    Json(CsrfJson { csrf: session.csrf })
 }
 
 pub fn login_ip(headers: &HeaderMap, peer: Option<IpAddr>) -> IpAddr {
@@ -265,6 +265,17 @@ mod tests {
         assert_eq!(
             login_ip(&headers, Some(peer)),
             "198.51.100.9".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn x_real_ip_trusted_from_loopback_when_xff_missing() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", HeaderValue::from_static("198.51.100.10"));
+        let peer: IpAddr = "127.0.0.1".parse().unwrap();
+        assert_eq!(
+            login_ip(&headers, Some(peer)),
+            "198.51.100.10".parse::<IpAddr>().unwrap()
         );
     }
 }

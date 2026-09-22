@@ -8,7 +8,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 pub fn atomic_write(path: &Path, content: &str) -> AdminResult<()> {
-    let parent = path.parent().ok_or_else(|| AdminError::Apply("no parent dir".into()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| AdminError::Apply("no parent dir".into()))?;
     if !parent.exists() {
         fs::create_dir_all(parent)?;
     }
@@ -90,9 +92,7 @@ pub fn kill_hup(process_name: &str) -> AdminResult<()> {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let pids: Vec<&str> = stdout.split_whitespace().collect();
     for pid in pids {
-        let status = Command::new("kill")
-            .args(["-HUP", pid])
-            .status()?;
+        let status = Command::new("kill").args(["-HUP", pid]).status()?;
         if !status.success() {
             return Err(AdminError::Apply(format!(
                 "kill -HUP {pid} failed: {status}"
@@ -114,6 +114,31 @@ pub fn apply(paths: &TrustTunnelPaths, kind: ApplyKind) -> AdminResult<ApplyKind
             Ok(ApplyKind::FullRestart)
         }
     }
+}
+
+const APPLY_DEFER: Duration = Duration::from_millis(2500);
+
+/// Restart/reload after the HTTP response can flush through reverse proxy on :443.
+pub fn schedule_apply(paths: std::sync::Arc<TrustTunnelPaths>, kind: ApplyKind) {
+    std::thread::spawn(move || {
+        std::thread::sleep(APPLY_DEFER);
+        if let Err(e) = apply(&paths, kind) {
+            eprintln!("trusttunnel_admin: deferred apply failed: {e}");
+        }
+    });
+}
+
+pub fn schedule_service_restart(service_name: String) {
+    std::thread::spawn(move || {
+        std::thread::sleep(APPLY_DEFER);
+        if let Err(e) = systemctl_restart(&service_name) {
+            eprintln!("trusttunnel_admin: deferred restart failed: {e}");
+            return;
+        }
+        if let Err(e) = wait_active(&service_name, Duration::from_secs(15)) {
+            eprintln!("trusttunnel_admin: deferred restart wait: {e}");
+        }
+    });
 }
 
 pub fn format_apply(t: &crate::i18n::I18n, result: &AdminResult<ApplyKind>) -> String {
@@ -250,7 +275,8 @@ pub fn http_message_complete(buf: &[u8]) -> bool {
 }
 
 pub fn parse_http_response(buf: &[u8]) -> AdminResult<(u16, String)> {
-    let header_end = header_block_end(buf).ok_or_else(|| AdminError::Apply("no http body".into()))?;
+    let header_end =
+        header_block_end(buf).ok_or_else(|| AdminError::Apply("no http body".into()))?;
     let headers = std::str::from_utf8(&buf[..header_end]).unwrap_or("");
     let status = headers
         .lines()
@@ -409,5 +435,26 @@ mod apply_http_tests {
     fn incomplete_content_length_is_not_complete() {
         let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n[{\"ok\":true}]";
         assert!(!http_message_complete(raw));
+    }
+
+    #[test]
+    fn apply_defer_outlives_a_proxied_html_response() {
+        assert!(APPLY_DEFER >= Duration::from_secs(2));
+    }
+
+    #[test]
+    fn format_apply_covers_reload_restart_and_error() {
+        let t = crate::i18n::t(crate::i18n::Lang::En);
+        assert_eq!(
+            format_apply(&t, &Ok(ApplyKind::Hosts)),
+            t.apply_reloaded
+        );
+        assert_eq!(
+            format_apply(&t, &Ok(ApplyKind::FullRestart)),
+            t.apply_restarted
+        );
+        let err = format_apply(&t, &Err(AdminError::Apply("boom".into())));
+        assert!(err.contains(t.apply_saved_apply_failed));
+        assert!(err.contains("boom"));
     }
 }

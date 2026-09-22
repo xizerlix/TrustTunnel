@@ -162,6 +162,21 @@ async fn handle_stream(
         &ORIGINAL_PROTOCOL_HEADER,
         http::HeaderValue::from_static(protocol.as_str()),
     );
+    if let Ok(ip) = request.client_address() {
+        if let Ok(v) = http::HeaderValue::from_str(&ip.to_string()) {
+            request_headers.headers.insert(
+                http::header::HeaderName::from_static("x-forwarded-for"),
+                v.clone(),
+            );
+            request_headers
+                .headers
+                .insert(http::header::HeaderName::from_static("x-real-ip"), v);
+        }
+        request_headers.headers.insert(
+            http::header::HeaderName::from_static("x-forwarded-proto"),
+            http::HeaderValue::from_static("https"),
+        );
+    }
 
     let encoded = http1_codec::encode_request(&request_headers);
     log_id!(

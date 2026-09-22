@@ -1,12 +1,12 @@
-use crate::apply::{apply, ApplyKind};
+use crate::apply::ApplyKind;
 use crate::auth::{verify_csrf_from_form, Authenticated};
-use crate::error::{AdminError, AdminResult, WithStatusExt};
+use crate::error::{AdminError, AdminResult};
 use crate::i18n::{self, I18n};
 use crate::models::VpnToml;
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
@@ -63,13 +63,7 @@ pub async fn vpn_save(
     crate::apply::atomic_write(&state.paths.vpn_toml, &serialized)?;
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
-    let result = apply(&state.paths, ApplyKind::FullRestart);
-    let status = crate::apply::format_apply(&t, &result);
-    let error = if result.is_err() {
-        Some(status.clone())
-    } else {
-        None
-    };
+    crate::apply::schedule_apply(state.paths.clone(), ApplyKind::FullRestart);
 
     Ok(VpnTemplate {
         title: t.vpn_settings.into(),
@@ -78,15 +72,10 @@ pub async fn vpn_save(
         t,
         lang: lang.as_str(),
         vpn,
-        save_status: Some(status),
-        error,
+        save_status: Some(t.apply_restart_queued.into()),
+        error: None,
     }
-    .into_response()
-        .with_status(if result.is_err() {
-            StatusCode::INTERNAL_SERVER_ERROR
-        } else {
-            StatusCode::OK
-        }))
+    .into_response())
 }
 
 #[derive(Deserialize, Default)]
@@ -145,12 +134,15 @@ pub fn apply_form(vpn: &mut VpnToml, form: &VpnForm) -> AdminResult<()> {
     vpn.ipv6_available = checkbox(&form.ipv6_available);
     vpn.allow_private_network_connections = checkbox(&form.allow_private_network_connections);
     let v = parse_u64(form.tls_handshake_timeout_secs.clone());
-    if v != 0 { vpn.tls_handshake_timeout_secs = v; }
+    if v != 0 {
+        vpn.tls_handshake_timeout_secs = v;
+    }
     vpn.limit_inbound_handshakes = checkbox(&form.limit_inbound_handshakes);
     let h = parse_u32(form.max_concurrent_inbound_handshakes.clone()).max(1);
     vpn.max_concurrent_inbound_handshakes = h;
     vpn.client_listener_timeout_secs = parse_u64(form.client_listener_timeout_secs.clone()).max(60);
-    vpn.connection_establishment_timeout_secs = parse_u64(form.connection_establishment_timeout_secs.clone()).max(1);
+    vpn.connection_establishment_timeout_secs =
+        parse_u64(form.connection_establishment_timeout_secs.clone()).max(1);
     vpn.tcp_connections_timeout_secs = parse_u64(form.tcp_connections_timeout_secs.clone()).max(60);
     vpn.udp_connections_timeout_secs = parse_u64(form.udp_connections_timeout_secs.clone()).max(60);
     vpn.credentials_file = parse_optional_string(form.credentials_file.clone());
@@ -160,14 +152,19 @@ pub fn apply_form(vpn: &mut VpnToml, form: &VpnForm) -> AdminResult<()> {
     vpn.ping_path = parse_optional_string(form.ping_path.clone());
     vpn.speedtest_path = parse_optional_string(form.speedtest_path.clone());
     let code = parse_u16(form.auth_failure_status_code.clone());
-    if code != 0 { vpn.auth_failure_status_code = code; }
+    if code != 0 {
+        vpn.auth_failure_status_code = code;
+    }
     vpn.non_connect_auth_failure_status_code = form
         .non_connect_auth_failure_status_code
         .as_deref()
         .and_then(|v| v.parse().ok());
-    vpn.default_max_http2_conns_per_client = parse_u32(form.default_max_http2_conns_per_client.clone());
-    vpn.default_max_http3_conns_per_client = parse_u32(form.default_max_http3_conns_per_client.clone());
-    vpn.default_max_traffic_bytes_per_client = parse_u64(form.default_max_traffic_bytes_per_client.clone());
+    vpn.default_max_http2_conns_per_client =
+        parse_u32(form.default_max_http2_conns_per_client.clone());
+    vpn.default_max_http3_conns_per_client =
+        parse_u32(form.default_max_http3_conns_per_client.clone());
+    vpn.default_max_traffic_bytes_per_client =
+        parse_u64(form.default_max_traffic_bytes_per_client.clone());
     vpn.traffic_usage_file = parse_optional_string(form.traffic_usage_file.clone());
     vpn.destination_stats_file = parse_optional_string(form.destination_stats_file.clone());
     Ok(())
@@ -179,8 +176,8 @@ mod tests {
 
     #[test]
     fn missing_checkbox_is_false() {
-        let mut vpn = VpnToml::from_str("listen_address = \"0.0.0.0:443\"\nipv6_available = true\n")
-            .unwrap();
+        let mut vpn =
+            VpnToml::from_str("listen_address = \"0.0.0.0:443\"\nipv6_available = true\n").unwrap();
         let form = VpnForm::default();
         apply_form(&mut vpn, &form).unwrap();
         assert!(!vpn.ipv6_available);

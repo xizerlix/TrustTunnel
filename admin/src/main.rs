@@ -31,13 +31,21 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 #[derive(Parser)]
-#[command(name = "trusttunnel_admin", version, about = "TrustTunnel admin console")]
+#[command(
+    name = "trusttunnel_admin",
+    version,
+    about = "TrustTunnel admin console"
+)]
 struct Cli {
     #[arg(long, env = "TT_ADMIN_BIND", default_value = "127.0.0.1:8443")]
     bind: SocketAddr,
     #[arg(long, env = "TT_PATHS_ROOT", default_value = "/opt/trusttunnel")]
     paths_root: PathBuf,
-    #[arg(long, env = "TT_ADMIN_TOML", default_value = "/etc/trusttunnel/admin.toml")]
+    #[arg(
+        long,
+        env = "TT_ADMIN_TOML",
+        default_value = "/etc/trusttunnel/admin.toml"
+    )]
     admin_toml: PathBuf,
     #[arg(long, env = "TT_SECURE_COOKIES", default_value_t = true)]
     secure_cookies: bool,
@@ -76,9 +84,7 @@ async fn serve(
     let mut config = AdminConfig::load_or_default(&admin_toml);
     config.bind = bind;
     if !config.is_initialized() {
-        anyhow::bail!(
-            "admin not initialized; run `trusttunnel_admin init-admin` first"
-        );
+        anyhow::bail!("admin not initialized; run `trusttunnel_admin init-admin` first");
     }
     let bcrypt_hash = Arc::new(tokio::sync::RwLock::new(config.bcrypt_hash.clone()));
     let config = Arc::new(config);
@@ -137,14 +143,7 @@ fn spawn_cleanup(state: AppState) {
             tokio::task::spawn_blocking(move || {
                 let (inn, out) = crate::handlers::dashboard::usage_file_totals(&root);
                 let (cpu, ram, io) = crate::live::series_gauges();
-                series.record(
-                    chrono::Local::now().timestamp(),
-                    inn,
-                    out,
-                    cpu,
-                    ram,
-                    io,
-                );
+                series.record(chrono::Local::now().timestamp(), inn, out, cpu, ram, io);
             })
             .await
             .ok();
@@ -165,16 +164,16 @@ fn build_router(state: AppState) -> Router {
         .route("/dashboard", get(handlers::dashboard::dashboard))
         .route("/dashboard/data", get(handlers::dashboard::dashboard_data))
         .route("/dashboard/ip", get(handlers::dashboard::ip_lookup))
-        .route("/dashboard/user", get(handlers::dashboard::user_destinations))
         .route(
-            "/dashboard/user/lock",
-            post(handlers::dashboard::user_lock),
+            "/dashboard/user",
+            get(handlers::dashboard::user_destinations),
         )
+        .route("/dashboard/user/lock", post(handlers::dashboard::user_lock))
+        .route("/dashboard/user/note", post(handlers::dashboard::user_note))
         .route(
-            "/dashboard/user/note",
-            post(handlers::dashboard::user_note),
+            "/dashboard/traffic",
+            get(handlers::dashboard::traffic_series),
         )
-        .route("/dashboard/traffic", get(handlers::dashboard::traffic_series))
         .route(
             "/dashboard/service",
             post(handlers::dashboard::service_restart),
@@ -237,16 +236,17 @@ async fn admin_css() -> impl IntoResponse {
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("text/css; charset=utf-8"),
             ),
-            (
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("no-cache"),
-            ),
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
         ],
         ADMIN_CSS,
     )
 }
 
-fn init_admin(admin_toml: PathBuf, bind: SocketAddr, password: Option<String>) -> anyhow::Result<()> {
+fn init_admin(
+    admin_toml: PathBuf,
+    bind: SocketAddr,
+    password: Option<String>,
+) -> anyhow::Result<()> {
     let plain = match password {
         Some(p) => p,
         None => {
@@ -330,7 +330,10 @@ mod tests {
         assert!(dash.contains("cpu-chart"));
         assert!(dash.contains("io-chart"));
         assert!(dash.contains("stat-strip"));
-        assert!(dash.contains("user-note") || include_str!("../templates/users.html").contains("name=\"note\""));
+        assert!(
+            dash.contains("user-note")
+                || include_str!("../templates/users.html").contains("name=\"note\"")
+        );
         assert!(dash.contains("stat-actions"));
         assert!(dash.contains("stat-btn-dest"));
         let charts = include_str!("../templates/dashboard.html");
@@ -339,5 +342,8 @@ mod tests {
         assert!(charts.contains("bw - 0.35"));
         assert!(charts.contains("plot.querySelector('.traf-sel')"));
         assert!(!charts.contains("xPct"));
+        assert!(include_str!("handlers/users.rs").contains("schedule_apply"));
+        assert!(include_str!("handlers/vpn.rs").contains("schedule_apply"));
+        assert!(include_str!("apply.rs").contains("APPLY_DEFER"));
     }
 }

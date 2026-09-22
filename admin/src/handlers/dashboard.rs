@@ -1,6 +1,5 @@
 use crate::apply::{
-    read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_restart, systemctl_show,
-    wait_active,
+    read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show,
 };
 use crate::auth::{verify_csrf, Authenticated};
 use crate::i18n::{self, I18n};
@@ -237,14 +236,14 @@ pub fn parse_systemd_pretty(s: &str) -> Option<SystemTime> {
         return None;
     }
     let tokens: Vec<&str> = s.split_whitespace().collect();
-    let (date, time_raw) = if tokens.len() >= 3 && tokens[0].bytes().any(|b| b.is_ascii_alphabetic())
-    {
-        (tokens[1], tokens[2])
-    } else if tokens.len() >= 2 {
-        (tokens[0], tokens[1])
-    } else {
-        return None;
-    };
+    let (date, time_raw) =
+        if tokens.len() >= 3 && tokens[0].bytes().any(|b| b.is_ascii_alphabetic()) {
+            (tokens[1], tokens[2])
+        } else if tokens.len() >= 2 {
+            (tokens[0], tokens[1])
+        } else {
+            return None;
+        };
     let time = time_raw.split('.').next().unwrap_or(time_raw);
     let date_time = format!("{date} {time}");
     let naive = chrono::NaiveDateTime::parse_from_str(&date_time, "%Y-%m-%d %H:%M:%S").ok()?;
@@ -760,7 +759,9 @@ async fn collect(state: &AppState) -> Stats {
                 1
             }
         }
-        rank(a).cmp(&rank(b)).then_with(|| a.username.cmp(&b.username))
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| a.username.cmp(&b.username))
     });
 
     if let Some(prom) = prom.as_deref() {
@@ -1049,8 +1050,8 @@ pub async fn user_lock(
     let user = username.to_string();
     let toggled = tokio::task::spawn_blocking(move || {
         let text = std::fs::read_to_string(&path)?;
-        let (out, disabled) = toggle_client_disabled(&text, &user)
-            .map_err(crate::error::AdminError::Apply)?;
+        let (out, disabled) =
+            toggle_client_disabled(&text, &user).map_err(crate::error::AdminError::Apply)?;
         crate::apply::atomic_write(&path, &out)?;
         Ok::<bool, crate::error::AdminError>(disabled)
     })
@@ -1069,29 +1070,13 @@ pub async fn user_lock(
                 .into_response();
         }
     };
-    let name = state.paths.service_name.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        systemctl_restart(&name)?;
-        wait_active(&name, Duration::from_secs(15))
+    crate::apply::schedule_service_restart(state.paths.service_name.clone());
+    Json(LockJson {
+        ok: true,
+        disabled,
+        message: String::new(),
     })
-    .await
-    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
-    match result {
-        Ok(()) => Json(LockJson {
-            ok: true,
-            disabled,
-            message: String::new(),
-        })
-        .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OpJson {
-                ok: false,
-                message: e.to_string(),
-            }),
-        )
-            .into_response(),
-    }
+    .into_response()
 }
 
 #[derive(Serialize)]
@@ -1102,8 +1087,7 @@ struct LockJson {
 }
 
 fn toggle_client_disabled(toml_text: &str, username: &str) -> Result<(String, bool), String> {
-    let mut creds: CredentialsToml =
-        toml::from_str(toml_text).map_err(|e| e.to_string())?;
+    let mut creds: CredentialsToml = toml::from_str(toml_text).map_err(|e| e.to_string())?;
     let Some(client) = creds.clients.iter_mut().find(|c| c.username == username) else {
         return Err(format!("user {username} not found"));
     };
@@ -1191,8 +1175,8 @@ pub async fn user_note(
     let tags = parse_tags(&body.tags);
     let saved = tokio::task::spawn_blocking(move || {
         let text = std::fs::read_to_string(&path)?;
-        let (out, note, tags) = set_client_note(&text, &user, &note, tags)
-            .map_err(crate::error::AdminError::Apply)?;
+        let (out, note, tags) =
+            set_client_note(&text, &user, &note, tags).map_err(crate::error::AdminError::Apply)?;
         crate::apply::atomic_write(&path, &out)?;
         Ok::<(String, Vec<String>), crate::error::AdminError>((note, tags))
     })
@@ -1263,29 +1247,13 @@ pub async fn service_restart(
         )
             .into_response();
     }
-    let name = state.paths.service_name.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        systemctl_restart(&name)?;
-        wait_active(&name, Duration::from_secs(15))
-    })
-    .await
-    .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    crate::apply::schedule_service_restart(state.paths.service_name.clone());
     let t = i18n::t(i18n::from_headers(&headers));
-    match result {
-        Ok(()) => Json(OpJson {
-            ok: true,
-            message: t.apply_restarted.into(),
-        })
-        .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OpJson {
-                ok: false,
-                message: e.to_string(),
-            }),
-        )
-            .into_response(),
-    }
+    Json(OpJson {
+        ok: true,
+        message: t.apply_restart_queued.into(),
+    })
+    .into_response()
 }
 
 pub async fn host_reboot(
@@ -1423,8 +1391,10 @@ client_sessions_per_user{username="bob",protocol_type="HTTP2"} 4
 
     #[test]
     fn usage_file_path_uses_vpn_setting() {
-        let vpn = VpnToml::from_str("listen_address = \"0.0.0.0:443\"\ntraffic_usage_file = \"usage.toml\"\n")
-            .unwrap();
+        let vpn = VpnToml::from_str(
+            "listen_address = \"0.0.0.0:443\"\ntraffic_usage_file = \"usage.toml\"\n",
+        )
+        .unwrap();
         let root = PathBuf::from("/opt/trusttunnel");
         assert_eq!(
             traffic_usage_path(&root, &vpn),
@@ -1530,7 +1500,10 @@ inbound_traffic_bytes_per_user{username="alice"} 1024.0
 "#;
         assert_eq!(parse_session_total_from_prometheus(text), 3);
         assert_eq!(parse_sessions_from_prometheus(text).get("alice"), Some(&2));
-        assert_eq!(parse_user_traffic_from_prometheus(text).get("alice"), Some(&(1024, 0)));
+        assert_eq!(
+            parse_user_traffic_from_prometheus(text).get("alice"),
+            Some(&(1024, 0))
+        );
     }
 
     #[test]

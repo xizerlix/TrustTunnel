@@ -270,6 +270,13 @@ protocol/deep-link format, library API) when relevant.
    Reverse proxy MUST copy the request body (Content-Length bytes, or until
    EOF for POST/PUT/PATCH without a length) to the origin before reading
    the origin response so form POST cannot deadlock.
+   Reverse proxy MUST set `X-Forwarded-For` / `X-Real-IP` from the TLS peer
+   and `X-Forwarded-Proto: https`. Admin login MUST use those headers when
+   the peer is loopback (the origin TCP client is 127.0.0.1).
+   Saving vpn/users/rules/hosts or dashboard restart MUST defer
+   `systemctl restart` / `kill -HUP` (~2.5s) so the HTTP response can flush
+   through reverse proxy on :443; do not restart the endpoint on the
+   request task before returning the page.
    Below 768px the dashboard user table MUST stack as a card grid (name /
    sessions / lock, then IPs, then traffic / quota) with nowrap on IP age
    and traffic so values do not split while columns sit empty.

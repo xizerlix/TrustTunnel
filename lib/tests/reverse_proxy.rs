@@ -483,6 +483,7 @@ async fn echo_handler(
     request: Request<hyper::Body>,
 ) -> Result<Response<hyper::Body>, hyper::Error> {
     info!("Received request: {:?}", request);
+    assert!(request.headers().get("x-forwarded-for").is_some());
     let body = hyper::body::to_bytes(request.into_body()).await?;
     Ok(Response::builder().body(hyper::Body::from(body)).unwrap())
 }
@@ -529,6 +530,17 @@ async fn request_handler(
     request: Request<hyper::Body>,
 ) -> Result<Response<hyper::Body>, hyper::Error> {
     info!("Received request: {:?}", request);
+    assert!(
+        request.headers().get("x-forwarded-for").is_some(),
+        "reverse proxy must send X-Forwarded-For"
+    );
+    assert_eq!(
+        request
+            .headers()
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok()),
+        Some("https")
+    );
     Ok(Response::builder()
         .body(hyper::Body::from(RESPONSE_BODY.clone()))
         .unwrap())
@@ -538,6 +550,7 @@ async fn request_handler_chunked(
     request: Request<hyper::Body>,
 ) -> Result<Response<hyper::Body>, hyper::Error> {
     info!("Received request: {:?}", request);
+    assert!(request.headers().get("x-forwarded-for").is_some());
     let chunk_size = 16 * 1024;
     let chunks = RESPONSE_BODY
         .chunks(chunk_size)

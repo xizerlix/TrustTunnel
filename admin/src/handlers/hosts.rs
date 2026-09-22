@@ -1,4 +1,4 @@
-use crate::apply::{apply, ApplyKind};
+use crate::apply::ApplyKind;
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::error::{AdminError, AdminResult};
 use crate::form::{form_col, form_lists};
@@ -7,7 +7,7 @@ use crate::models::HostsToml;
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 
 #[derive(Template)]
@@ -74,20 +74,15 @@ pub async fn hosts_save(
     let serialized = toml::to_string_pretty(&hosts).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.hosts_toml, &serialized)?;
     let t = i18n::t(i18n::from_headers(&headers));
-    let apply_result = apply(&state.paths, ApplyKind::Hosts);
-    let status = crate::apply::format_apply(&t, &apply_result);
-    let error = if apply_result.is_err() {
-        Some(status.clone())
-    } else {
-        None
-    };
-    let resp = page(&session, &headers, hosts, Some(status), error).into_response();
-    let status_code = if apply_result.is_err() {
-        StatusCode::INTERNAL_SERVER_ERROR
-    } else {
-        StatusCode::OK
-    };
-    Ok((status_code, resp).into_response())
+    crate::apply::schedule_apply(state.paths.clone(), ApplyKind::Hosts);
+    Ok(page(
+        &session,
+        &headers,
+        hosts,
+        Some(t.apply_reloaded.to_string()),
+        None,
+    )
+    .into_response())
 }
 
 #[derive(Default)]

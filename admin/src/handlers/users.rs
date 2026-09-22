@@ -1,4 +1,4 @@
-use crate::apply::{apply, ApplyKind};
+use crate::apply::ApplyKind;
 use crate::auth::{verify_csrf_from_form, Authenticated};
 use crate::error::{AdminError, AdminResult};
 use crate::form::{bytes_to_gib_field, form_col, form_lists, gib_field_to_bytes};
@@ -7,7 +7,7 @@ use crate::models::{ClientEntry, CredentialsToml, HostsToml, VpnToml};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::Json;
 use serde::Serialize;
@@ -187,37 +187,24 @@ pub async fn users_save(
             max_traffic_bytes: gib_field_to_bytes(gb.get(i).map(|s| s.as_str()).unwrap_or("")),
             disabled: existing.map(|c| c.disabled).unwrap_or(false),
             note: notes.get(i).cloned().unwrap_or_default(),
-            tags: crate::handlers::dashboard::parse_tags(
-                &tags.get(i).cloned().unwrap_or_default(),
-            ),
+            tags: crate::handlers::dashboard::parse_tags(&tags.get(i).cloned().unwrap_or_default()),
         });
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.credentials_toml, &serialized)?;
     patch_vpn_default_quota(&state.paths.vpn_toml, gib_field_to_bytes(&default_gb))?;
     let t = i18n::t(i18n::from_headers(&headers));
-    let apply_result = apply(&state.paths, ApplyKind::FullRestart);
-    let msg = crate::apply::format_apply(&t, &apply_result);
-    let err = if apply_result.is_err() {
-        Some(msg.clone())
-    } else {
-        None
-    };
-    let resp = page(
+    crate::apply::schedule_apply(state.paths.clone(), ApplyKind::FullRestart);
+    let msg = t.apply_restart_queued.to_string();
+    Ok(page(
         &session,
         &headers,
         &creds,
         default_gb_from_vpn(&state.paths.vpn_toml),
         Some(msg),
-        err,
+        None,
     )
-    .into_response();
-    let s = if apply_result.is_err() {
-        StatusCode::INTERNAL_SERVER_ERROR
-    } else {
-        StatusCode::OK
-    };
-    Ok((s, resp).into_response())
+    .into_response())
 }
 
 pub async fn users_delete(
@@ -243,23 +230,7 @@ pub async fn users_delete(
     }
     let serialized = toml::to_string_pretty(&creds).map_err(AdminError::TomlSe)?;
     crate::apply::atomic_write(&state.paths.credentials_toml, &serialized)?;
-    let t = i18n::t(i18n::from_headers(&headers));
-    let apply_result = apply(&state.paths, ApplyKind::FullRestart);
-    if apply_result.is_err() {
-        let msg = crate::apply::format_apply(&t, &apply_result);
-        return Ok((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            page(
-                &session,
-                &headers,
-                &creds,
-                default_gb_from_vpn(&state.paths.vpn_toml),
-                Some(msg.clone()),
-                Some(msg),
-            ),
-        )
-            .into_response());
-    }
+    crate::apply::schedule_apply(state.paths.clone(), ApplyKind::FullRestart);
     Ok(Redirect::to("/users").into_response())
 }
 
@@ -304,8 +275,7 @@ pub async fn users_deeplink(
         name: Some(host.hostname.clone()),
         dns_upstreams: Vec::new(),
     };
-    let url = trusttunnel_deeplink::encode(&cfg)
-        .map_err(|e| AdminError::Apply(e.to_string()))?;
+    let url = trusttunnel_deeplink::encode(&cfg).map_err(|e| AdminError::Apply(e.to_string()))?;
     Ok(Json(DeeplinkJson { url }).into_response())
 }
 
@@ -327,7 +297,10 @@ mod tests {
             "username=alice&password=secret&max_http2_conns=8&max_http3_conns=0&max_traffic_gb=1&username=test&password=pw&max_http2_conns=0&max_http3_conns=0&max_traffic_gb=",
         );
         assert_eq!(form_col(&map, "username"), vec!["alice", "test"]);
-        assert_eq!(gib_field_to_bytes(&form_col(&map, "max_traffic_gb")[0]), 1_073_741_824);
+        assert_eq!(
+            gib_field_to_bytes(&form_col(&map, "max_traffic_gb")[0]),
+            1_073_741_824
+        );
         assert_eq!(gib_field_to_bytes(&form_col(&map, "max_traffic_gb")[1]), 0);
     }
 
