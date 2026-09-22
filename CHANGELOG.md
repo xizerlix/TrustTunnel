@@ -15,8 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [Fix] Admin IP modal treats `_udp2` / `_icmp` / `unknown` as the same
   client as `trusttunnel_client` on that OS, not extra devices. Distinct
   OS behind one NAT IP show as icons next to the address.
-- [Feature] Several phones of the same OS behind one NAT IP show as
-  `Android · trusttunnel_client ×5` (TLS sessions per OS, not a device id).
+- [Fix] Drop IP-card ×N TLS session counts; one client opens many sessions.
 - [Fix] Reverse proxy sends `X-Forwarded-For` (TLS client IP) so admin
   Telegram login alerts are not 127.0.0.1; vpn/users/rules saves defer
   endpoint restart so the spinner can finish through :443.

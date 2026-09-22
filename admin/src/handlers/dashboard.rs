@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -109,7 +109,6 @@ struct UsageUser {
 pub(crate) struct LiveIp {
     address: String,
     user_agents: Vec<String>,
-    os_connections: BTreeMap<String, u64>,
 }
 
 #[derive(Clone, Default)]
@@ -324,7 +323,6 @@ fn parse_one_client(v: &Value) -> Option<LiveClient> {
                 ips.push(LiveIp {
                     address: ip.to_string(),
                     user_agents: Vec::new(),
-                    os_connections: BTreeMap::new(),
                 });
             }
         }
@@ -348,7 +346,6 @@ fn parse_live_ip(item: &Value) -> Option<LiveIp> {
         return Some(LiveIp {
             address: s.to_string(),
             user_agents: Vec::new(),
-            os_connections: BTreeMap::new(),
         });
     }
     let address = item.get("address")?.as_str()?.to_string();
@@ -370,20 +367,9 @@ fn parse_live_ip(item: &Value) -> Option<LiveIp> {
             }
         }
     }
-    let mut os_connections = BTreeMap::new();
-    if let Some(obj) = item.get("os_connections").and_then(Value::as_object) {
-        for (k, v) in obj {
-            let n = json_u64(Some(v));
-            if n == 0 || k.is_empty() {
-                continue;
-            }
-            os_connections.insert(k.clone(), n);
-        }
-    }
     Some(LiveIp {
         address,
         user_agents,
-        os_connections,
     })
 }
 
@@ -705,7 +691,6 @@ async fn collect(state: &AppState) -> Stats {
         if let Some(c) = by_user.get(&pair.0) {
             if let Some(live_ip) = c.ips.iter().find(|i| i.address == view.address) {
                 view.user_agents = live_ip.user_agents.clone();
-                view.os_connections = live_ip.os_connections.clone();
             }
         }
         by_user_ips.entry(pair.0).or_default().push(view);
@@ -1412,21 +1397,6 @@ mod tests {
             parsed[0].ips[0].user_agents,
             vec!["Android TrustTunnel", "iOS TrustTunnel"]
         );
-    }
-
-    #[test]
-    fn live_clients_keep_os_connection_counts() {
-        let v = json!([{
-            "username": "alice",
-            "sessions": 5,
-            "ips": [{
-                "address": "203.0.113.10",
-                "user_agents": ["Android trusttunnel_client"],
-                "os_connections": {"android": 5}
-            }]
-        }]);
-        let parsed = parse_live_clients(&v);
-        assert_eq!(parsed[0].ips[0].os_connections.get("android"), Some(&5));
     }
 
     #[test]

@@ -278,9 +278,7 @@ protocol/deep-link format, library API) when relevant.
    modal MUST list those agents under the geo block, collapsing protocol
    channel tokens (`_udp2`, `_icmp`, `_check`, `unknown`) so one device is
    one OS+app line. The IP row MUST show OS icons for distinct platforms
-   on that address. Same OS+app on several TLS sessions behind one NAT IP
-   MUST show a count (modal `×N`, badge next to the icon); that count is
-   live TLS connections, so HTTP/2 plus HTTP/3 on one phone can be two.
+   on that address.
    Saving vpn/users/rules/hosts or dashboard restart MUST defer
    `systemctl restart` / `kill -HUP` (~2.5s) so the HTTP response can flush
    through reverse proxy on :443; do not restart the endpoint on the

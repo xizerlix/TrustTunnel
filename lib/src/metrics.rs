@@ -6,7 +6,7 @@ use crate::{core, http_codec, log_id, log_utils};
 use bytes::Bytes;
 use prometheus::Encoder;
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -47,8 +47,6 @@ struct ClientIpEntry {
     tag: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     user_agents: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    os_connections: BTreeMap<String, u64>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -288,23 +286,11 @@ impl Metrics {
     /// Aggregate per-user summaries: configured clients (shown even when idle) merged
     /// with runtime connections and lifetime traffic totals from the per-user counters.
     fn clients_summary(&self, configured_usernames: &[String]) -> Vec<ClientSummary> {
-        struct IpAgg {
-            agents: BTreeSet<String>,
-            os_connections: BTreeMap<String, u64>,
-        }
-        impl Default for IpAgg {
-            fn default() -> Self {
-                Self {
-                    agents: BTreeSet::new(),
-                    os_connections: BTreeMap::new(),
-                }
-            }
-        }
         struct AggEntry {
             sessions: u64,
             inbound: u64,
             outbound: u64,
-            ips: HashMap<String, IpAgg>,
+            ips: HashMap<String, BTreeSet<String>>,
         }
         impl Default for AggEntry {
             fn default() -> Self {
@@ -334,18 +320,11 @@ impl Metrics {
                 let entry = agg.entry(uname).or_default();
                 entry.sessions = entry.sessions.saturating_add(info.sessions);
                 if let Some(ip) = info.ip {
-                    let ip_agg = entry.ips.entry(ip.to_string()).or_default();
-                    ip_agg.agents.extend(info.user_agents.iter().cloned());
-                    if !info.user_agents.is_empty() {
-                        let keys = connection_os_keys(&info.user_agents);
-                        let plat = keys
-                            .iter()
-                            .find(|k| k.as_str() != "other")
-                            .cloned()
-                            .or_else(|| keys.iter().next().cloned())
-                            .unwrap_or_else(|| "other".into());
-                        *ip_agg.os_connections.entry(plat).or_default() += 1;
-                    }
+                    entry
+                        .ips
+                        .entry(ip.to_string())
+                        .or_default()
+                        .extend(info.user_agents.iter().cloned());
                 }
             }
         }
@@ -356,10 +335,9 @@ impl Metrics {
                 let mut ips: Vec<ClientIpEntry> = entry
                     .ips
                     .into_iter()
-                    .map(|(address, ip_agg)| ClientIpEntry {
+                    .map(|(address, agents)| ClientIpEntry {
                         tag: ip_hashtag(&address),
-                        user_agents: ip_agg.agents.into_iter().collect(),
-                        os_connections: ip_agg.os_connections,
+                        user_agents: agents.into_iter().collect(),
                         address,
                     })
                     .collect();
@@ -413,29 +391,6 @@ impl Metrics {
 
 fn ip_hashtag(address: &str) -> String {
     format!("#ip_{}", address.replace('.', "_").replace(':', "_"))
-}
-
-fn connection_os_keys(agents: &BTreeSet<String>) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    for ua in agents {
-        let platform = ua.split_whitespace().next().unwrap_or("");
-        if platform.is_empty() {
-            continue;
-        }
-        keys.insert(os_icon_key(platform).to_string());
-    }
-    keys
-}
-
-fn os_icon_key(platform: &str) -> &'static str {
-    match platform.to_ascii_lowercase().as_str() {
-        "android" => "android",
-        "ios" | "ipados" | "iphone" | "ipad" => "ios",
-        "macos" | "osx" | "darwin" | "mac" => "macos",
-        "windows" | "win32" | "win64" => "windows",
-        "linux" => "linux",
-        _ => "other",
-    }
 }
 
 fn sanitize_user_agent(s: &str) -> Option<String> {
@@ -926,38 +881,6 @@ mod tests {
                 "iOS TrustTunnel".to_string()
             ]
         );
-        assert_eq!(alice.ips[0].os_connections.get("android"), Some(&1));
-        assert_eq!(alice.ips[0].os_connections.get("ios"), Some(&1));
-    }
-
-    #[test]
-    fn clients_summary_counts_tls_conns_per_os_on_one_nat_ip() {
-        let m = metrics(true);
-        let mut guards = Vec::new();
-        for i in 0..5 {
-            let id = format!("android-{i}");
-            m.register_connection(id.clone(), Some("203.0.113.10".parse().unwrap()));
-            guards.push(m.clone().client_sessions_counter(
-                Protocol::Http2,
-                id.clone(),
-                Some("alice".into()),
-            ));
-            m.note_connection_user_agent(&id, "Android trusttunnel_client");
-            m.note_connection_user_agent(&id, "Android _udp2");
-            m.note_connection_user_agent(&id, "Android unknown");
-        }
-        m.register_connection("win-0".into(), Some("203.0.113.10".parse().unwrap()));
-        let _w = m.clone().client_sessions_counter(
-            Protocol::Http2,
-            "win-0".into(),
-            Some("alice".into()),
-        );
-        m.note_connection_user_agent("win-0", "Windows trusttunnel_client");
-
-        let summaries = m.clients_summary(&["alice".into()]);
-        let alice = summaries.iter().find(|s| s.username == "alice").unwrap();
-        assert_eq!(alice.ips[0].os_connections.get("android"), Some(&5));
-        assert_eq!(alice.ips[0].os_connections.get("windows"), Some(&1));
     }
 
     #[test]

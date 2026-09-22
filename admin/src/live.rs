@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -29,37 +29,21 @@ impl IpKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct OsIconView {
-    pub key: String,
-    pub count: u64,
-}
-
-#[derive(Clone, Debug)]
 pub struct IpView {
     pub address: String,
     pub connected_h: String,
     pub kind: &'static str,
     pub user_agents: Vec<String>,
-    pub os_connections: BTreeMap<String, u64>,
 }
 
 impl IpView {
     pub fn agents_json(&self) -> String {
-        serde_json::to_string(&crate::client_ua::display_lines(
-            &self.user_agents,
-            &self.os_connections,
-        ))
-        .unwrap_or_else(|_| "[]".into())
+        serde_json::to_string(&crate::client_ua::display_lines(&self.user_agents))
+            .unwrap_or_else(|_| "[]".into())
     }
 
-    pub fn os_icons(&self) -> Vec<OsIconView> {
+    pub fn os_keys(&self) -> Vec<String> {
         crate::client_ua::os_keys(&self.user_agents)
-            .into_iter()
-            .map(|key| OsIconView {
-                count: self.os_connections.get(&key).copied().unwrap_or(0),
-                key,
-            })
-            .collect()
     }
 }
 
@@ -135,7 +119,6 @@ impl LiveCache {
                 connected_h: humanize_nosec(age),
                 kind: self.lookup_kind(ip).as_str(),
                 user_agents: Vec::new(),
-                os_connections: BTreeMap::new(),
             });
         }
         out
