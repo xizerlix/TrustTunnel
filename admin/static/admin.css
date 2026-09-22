@@ -488,6 +488,18 @@ textarea:focus {
   flex-shrink: 0;
   color: #475569;
 }
+.os-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.os-n {
+  font-size: 10px;
+  line-height: 1;
+  color: #475569;
+  flex-shrink: 0;
+}
 
 @media (max-width: 767px) {
   .user-table-wrap { overflow-x: visible; }

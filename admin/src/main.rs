@@ -339,6 +339,7 @@ mod tests {
         assert!(dash.contains("stat-btn-dest"));
         assert!(dash.contains("data-agents"));
         assert!(include_str!("../templates/dashboard_data.html").contains("os-ico"));
+        assert!(include_str!("../templates/dashboard_data.html").contains("os-n"));
         let charts = include_str!("../templates/dashboard.html");
         assert!(charts.contains("traf-sel"));
         assert!(charts.contains("var x = padL + j * bw"));

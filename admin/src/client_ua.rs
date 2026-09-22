@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 const CHANNELS: &[&str] = &["_udp2", "_icmp", "_check", "unknown"];
 
-pub fn display_lines(raw: &[String]) -> Vec<String> {
+pub fn display_lines(raw: &[String], counts: &BTreeMap<String, u64>) -> Vec<String> {
     let mut by_platform: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
     for ua in raw {
         let Some((platform, token)) = split_ua(ua) else {
@@ -21,11 +21,17 @@ pub fn display_lines(raw: &[String]) -> Vec<String> {
     let mut lines = Vec::new();
     for (_, (platform, mut apps)) in by_platform {
         apps.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+        let n = counts.get(icon_key(&platform)).copied().unwrap_or(0);
+        let suffix = if n > 1 {
+            format!(" ×{n}")
+        } else {
+            String::new()
+        };
         if apps.is_empty() {
-            lines.push(platform);
+            lines.push(format!("{platform}{suffix}"));
         } else {
             for app in apps {
-                lines.push(format!("{platform} · {app}"));
+                lines.push(format!("{platform} · {app}{suffix}"));
             }
         }
     }
@@ -108,7 +114,7 @@ mod tests {
             "Windows unknown",
         ]);
         assert_eq!(
-            display_lines(&raw),
+            display_lines(&raw, &BTreeMap::new()),
             vec![
                 "Android · trusttunnel_client".to_string(),
                 "Windows · trusttunnel_client".to_string(),
@@ -124,7 +130,7 @@ mod tests {
     fn official_phone_is_one_line() {
         let raw = s(&["iOS trusttunnel_client", "iOS unknown"]);
         assert_eq!(
-            display_lines(&raw),
+            display_lines(&raw, &BTreeMap::new()),
             vec!["iOS · trusttunnel_client".to_string()]
         );
         assert_eq!(os_keys(&raw), vec!["ios".to_string()]);
@@ -132,6 +138,24 @@ mod tests {
 
     #[test]
     fn health_check_only_shows_platform() {
-        assert_eq!(display_lines(&s(&["Android"])), vec!["Android".to_string()]);
+        assert_eq!(
+            display_lines(&s(&["Android"]), &BTreeMap::new()),
+            vec!["Android".to_string()]
+        );
+    }
+
+    #[test]
+    fn five_android_tls_sessions_show_count() {
+        let raw = s(&[
+            "Android _udp2",
+            "Android trusttunnel_client",
+            "Android unknown",
+        ]);
+        let mut counts = BTreeMap::new();
+        counts.insert("android".into(), 5);
+        assert_eq!(
+            display_lines(&raw, &counts),
+            vec!["Android · trusttunnel_client ×5".to_string()]
+        );
     }
 }
