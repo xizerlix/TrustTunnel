@@ -22,6 +22,7 @@ pub struct SettingsTemplate {
     pub totp_on: bool,
     pub totp_secret: Option<String>,
     pub totp_otpauth: Option<String>,
+    pub totp_qr: Option<String>,
 }
 
 fn page(
@@ -35,6 +36,9 @@ fn page(
     let lang = i18n::from_headers(headers);
     let t = i18n::t(lang);
     let totp_otpauth = totp_secret.as_ref().map(|s| crate::totp::otpauth_url(s));
+    let totp_qr = totp_secret
+        .as_ref()
+        .and_then(|s| crate::totp::otpauth_qr_data_uri(s));
     SettingsTemplate {
         title: t.settings.into(),
         username: session.username.clone(),
@@ -46,6 +50,7 @@ fn page(
         totp_on,
         totp_secret,
         totp_otpauth,
+        totp_qr,
     }
 }
 

@@ -16,6 +16,22 @@ pub fn otpauth_url(secret: &str) -> String {
     )
 }
 
+pub fn otpauth_qr_data_uri(secret: &str) -> Option<String> {
+    use base64::Engine;
+    use qrcode::render::svg;
+    use qrcode::QrCode;
+    let url = otpauth_url(secret);
+    let code = QrCode::new(url.as_bytes()).ok()?;
+    let svg = code
+        .render::<svg::Color<'_>>()
+        .min_dimensions(180, 180)
+        .dark_color(svg::Color("#0f172a"))
+        .light_color(svg::Color("#ffffff"))
+        .build();
+    let b64 = base64::engine::general_purpose::STANDARD.encode(svg.as_bytes());
+    Some(format!("data:image/svg+xml;base64,{b64}"))
+}
+
 pub fn verify(secret_b32: &str, code: &str, now_unix: u64) -> bool {
     let digits: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
     if digits.len() != 6 {
@@ -59,5 +75,8 @@ mod tests {
         assert!(url.starts_with("otpauth://totp/"));
         assert!(url.contains("secret=MFRGGZDFMZTWQ2LK"));
         assert!(!url.contains("TrustTunnel"));
+        let qr = otpauth_qr_data_uri("MFRGGZDFMZTWQ2LK").expect("qr");
+        assert!(qr.starts_with("data:image/svg+xml;base64,"));
+        assert!(qr.len() > 100);
     }
 }

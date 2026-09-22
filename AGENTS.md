@@ -231,7 +231,8 @@ protocol/deep-link format, library API) when relevant.
    (DuckDNS instructions); do not reuse the old domain. Do not put backup
    zip contents in git.
    Admin 2FA is TOTP (`totp_enabled` / `totp_secret` in `admin.toml`). The
-   shared secret MUST stay on the server; do not commit it. Login history
+   shared secret MUST stay on the server; do not commit it. The setup card
+   MUST show an SVG QR of the otpauth URI (no CDN). Login history
    lives next to `admin.toml` as `login_history.json` (time + IP) and is
    shown from Logs → Sign-in history.
    Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs

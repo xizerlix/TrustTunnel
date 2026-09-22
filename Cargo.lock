@@ -2642,6 +2642,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
 name = "quiche"
 version = "0.24.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4093,7 +4099,7 @@ dependencies = [
 
 [[package]]
 name = "trusttunnel_admin"
-version = "0.1.0"
+version = "1.1.36"
 dependencies = [
  "anyhow",
  "askama",
@@ -4110,6 +4116,7 @@ dependencies = [
  "futures",
  "http 1.5.0",
  "log",
+ "qrcode",
  "rand 0.8.7",
  "serde",
  "serde_json",

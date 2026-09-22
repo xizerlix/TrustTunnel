@@ -348,6 +348,7 @@ mod tests {
         assert!(include_str!("../templates/settings.html").contains("/settings/backup"));
         assert!(include_str!("../templates/settings.html").contains("backup_help"));
         assert!(include_str!("../templates/settings.html").contains("totp_help"));
+        assert!(include_str!("../templates/settings.html").contains("totp_qr"));
         assert!(include_str!("../templates/logs.html").contains("/logs/logins"));
         let login = include_str!("../templates/login.html");
         assert!(login.contains("MDM Panel"));

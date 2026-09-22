@@ -43,6 +43,12 @@
   {% else %}
     {% if let Some(secret) = totp_secret %}
     <p class="text-slate-600 text-sm">{{ t.totp_setup_help }}</p>
+    {% if let Some(qr) = totp_qr %}
+    <div>
+      <span class="block text-sm font-medium mb-1">{{ t.totp_qr_label }}</span>
+      <img src="{{ qr }}" width="180" height="180" alt="" class="mx-auto block bg-white">
+    </div>
+    {% endif %}
     <div>
       <span class="block text-sm font-medium mb-1">{{ t.totp_secret_label }}</span>
       <code class="block text-xs break-all bg-slate-100 p-2 rounded">{{ secret }}</code>
