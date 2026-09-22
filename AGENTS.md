@@ -38,6 +38,7 @@ vpn-libs-endpoint/
 │   └── src/main.rs            # CLI entrypoint for the VPN endpoint
 ├── admin/                     # Binary crate (`trusttunnel_admin`) web console
 │   ├── src/                   # Auth, TOML editors, dashboard
+│   ├── backup/                # restore.sh baked into Settings Backup zip
 │   ├── static/                # Bundled CSS (`admin.css`, no third-party CDNs)
 │   └── templates/             # Askama HTML templates
 ├── tools/                     # Binary crate (`setup_wizard`)
@@ -223,6 +224,12 @@ protocol/deep-link format, library API) when relevant.
    Telegram using the same `TOKEN` / `MY_CHAT_ID` as `/root/bot_listener.sh`
    (or `TT_TELEGRAM_BOT_TOKEN` / `TT_TELEGRAM_CHAT_ID` / `TT_TELEGRAM_SCRIPT`).
    Do not put bot tokens in the git repository.
+   Admin Settings Backup MUST POST `/settings/backup` with CSRF and return
+   a zip (configs under `/opt/trusttunnel`, `admin.toml`, systemd units,
+   `crontab -l`, `/root` scripts referenced from cron, plus `restore.sh`).
+   Restore MUST issue a new Let's Encrypt cert for a new hostname
+   (DuckDNS instructions); do not reuse the old domain. Do not put backup
+   zip contents in git.
    Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs
    (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless

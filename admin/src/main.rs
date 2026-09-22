@@ -1,5 +1,6 @@
 mod apply;
 mod auth;
+mod backup;
 mod client_ua;
 mod config;
 mod dest_stats;
@@ -209,6 +210,10 @@ fn build_router(state: AppState) -> Router {
             "/settings",
             get(handlers::settings::settings_form).post(handlers::settings::settings_password),
         )
+        .route(
+            "/settings/backup",
+            post(handlers::settings::settings_backup),
+        )
         .route("/csrf", get(handlers::login::csrf_token))
         .route("/static/admin.css", get(admin_css))
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -317,6 +322,8 @@ mod tests {
         ] {
             assert!(html.contains("/static/admin.css"));
         }
+        assert!(include_str!("../templates/settings.html").contains("/settings/backup"));
+        assert!(include_str!("../templates/settings.html").contains("backup_help"));
         let login = include_str!("../templates/login.html");
         assert!(login.contains("MDM Panel"));
         assert!(!login.contains("TrustTunnel"));

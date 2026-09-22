@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin Settings has Backup: a zip of VPN/admin data, crontab,
+  bot/monitor scripts, and `restore.sh` for a new host (DuckDNS + Let's
+  Encrypt, endpoint and admin).
 - [Fix] Public login `<title>` is `MDM Panel`, not TrustTunnel Admin.
 - [Fix] Endpoint compiles: `User-Agent` is read on the multiplexed CONNECT
   request (not the later TCP/UDP-only traits).

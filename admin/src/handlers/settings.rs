@@ -5,7 +5,7 @@ use crate::i18n::{self, I18n};
 use crate::state::AppState;
 use askama::Template;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
@@ -21,10 +21,7 @@ pub struct SettingsTemplate {
     pub error: Option<String>,
 }
 
-pub async fn settings_form(
-    Authenticated(session): Authenticated,
-    headers: HeaderMap,
-) -> Response {
+pub async fn settings_form(Authenticated(session): Authenticated, headers: HeaderMap) -> Response {
     let lang = i18n::from_headers(&headers);
     let t = i18n::t(lang);
     SettingsTemplate {
@@ -55,7 +52,9 @@ pub async fn settings_password(
         return Err(AdminError::Validation("passwords do not match".into()));
     }
     if form.new_password.len() < 10 {
-        return Err(AdminError::Validation("password must be at least 10 characters".into()));
+        return Err(AdminError::Validation(
+            "password must be at least 10 characters".into(),
+        ));
     }
     let current_hash = {
         let file_hash =
@@ -96,7 +95,47 @@ pub async fn settings_password(
         error: None,
     }
     .into_response()
-        .with_status(StatusCode::OK))
+    .with_status(StatusCode::OK))
+}
+
+pub async fn settings_backup(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+    body: String,
+) -> AdminResult<Response> {
+    verify_csrf_from_form(&headers, &body, &session).await?;
+    let root = state.paths.root.clone();
+    let admin_toml = state.paths.admin_toml.clone();
+    let bytes = tokio::task::spawn_blocking(move || {
+        let input = crate::backup::collect_live(root, admin_toml);
+        crate::backup::build_zip(&input)
+    })
+    .await
+    .map_err(|e| AdminError::Apply(format!("backup task: {e}")))?
+    .map_err(|e| AdminError::Apply(format!("backup zip: {e}")))?;
+    let name = format!(
+        "mdm-backup-{}.zip",
+        chrono::Local::now().format("%Y%m%d-%H%M")
+    );
+    let disp = format!("attachment; filename=\"{name}\"");
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/zip"),
+            ),
+            (
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&disp).unwrap_or_else(|_| {
+                    HeaderValue::from_static("attachment; filename=\"mdm-backup.zip\"")
+                }),
+            ),
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]

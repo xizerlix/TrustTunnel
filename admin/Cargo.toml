@@ -36,6 +36,7 @@ toml_edit = "0.22"
 trusttunnel-deeplink = { path = "../deeplink" }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["compression-gzip", "trace", "set-header"] }
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
