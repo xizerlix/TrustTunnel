@@ -8,12 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- [Feature] Admin can disconnect one IP (`×` on the dashboard IP row)
-  without locking the whole user; live TLS tunnels drop, reconnect is
-  allowed.
-- [Feature] `rules.toml` `domain` (e.g. `instagram.com`) drops CONNECT,
-  TLS SNI, and DNS to that host and subdomains; inbound CIDR /
-  `client_random` rules are unchanged.
+- [Fix] Public login `<title>` is `MDM Panel`, not TrustTunnel Admin.
 - [Fix] Endpoint compiles: `User-Agent` is read on the multiplexed CONNECT
   request (not the later TCP/UDP-only traits).
 - [Feature] Admin IP modal lists CONNECT `User-Agent` strings under the geo
@@ -21,7 +16,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [Fix] Admin IP modal treats `_udp2` / `_icmp` / `unknown` as the same
   client as `trusttunnel_client` on that OS, not extra devices. Distinct
   OS behind one NAT IP show as icons next to the address.
-- [Fix] Drop IP-card ×N TLS session counts; one client opens many sessions.
 - [Fix] Reverse proxy sends `X-Forwarded-For` (TLS client IP) so admin
   Telegram login alerts are not 127.0.0.1; vpn/users/rules saves defer
   endpoint restart so the spinner can finish through :443.

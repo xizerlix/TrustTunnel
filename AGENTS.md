@@ -265,16 +265,10 @@ protocol/deep-link format, library API) when relevant.
    edits them and the dashboard shows them. Endpoint ignores unknown keys.
    Dashboard per-user lock MUST write `disabled = true` on the matching
    `[[client]]` in `credentials.toml` (absent/false = unlocked), then
-   restart the endpoint so live sessions drop. User-page saves MUST keep
+   restart the endpoint so live sessions drop.    User-page saves MUST keep
    the existing `disabled` flag.
-   Dashboard IP kick MUST drop live TLS tunnels for that username+IP via
-   the metrics `/kick` endpoint, without writing `disabled` or restarting.
-   The user can reconnect from that IP. The lock still blocks the whole
-   username.
-   `rules.toml` `domain` (e.g. `instagram.com`) MUST drop tunneled CONNECT
-   hostnames, TLS ClientHello SNI on IP CONNECTs, and DNS questions on
-   UDP/53 (including subdomains). Do not inject an HTML block page.
-   Inbound TLS accept still uses CIDR / `client_random_prefix` only.
+   The unauthenticated login HTML `<title>` MUST be a generic MDM/UEM label
+   (`MDM Panel`), not TrustTunnel or VPN.
    Reverse proxy MUST copy the request body (Content-Length bytes, or until
    EOF for POST/PUT/PATCH without a length) to the origin before reading
    the origin response so form POST cannot deadlock.

@@ -13,12 +13,11 @@
 
 <form method="post" action="/rules" class="space-y-4 js-save-wait"><input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-100">
-  <table class="w-full text-sm min-w-[36rem]">
+  <table class="w-full text-sm min-w-[28rem]">
     <thead>
       <tr class="text-left border-b border-slate-200">
         <th class="p-2">{{ t.cidr }}</th>
         <th class="p-2">{{ t.prefix }}</th>
-        <th class="p-2">{{ t.domain }}</th>
         <th class="p-2">{{ t.action }}</th>
         <th class="p-2"></th>
       </tr>
@@ -29,7 +28,6 @@
       <tr class="border-b border-slate-100 js-rule-row">
         <td class="p-2"><input type="text" name="cidr" value="{{ r.cidr.as_deref().unwrap_or("") }}" placeholder="1.2.3.0/24"></td>
         <td class="p-2"><input type="text" name="client_random_prefix" value="{{ r.client_random_prefix.as_deref().unwrap_or("") }}" placeholder="aabbcc"></td>
-        <td class="p-2"><input type="text" name="domain" value="{{ r.domain.as_deref().unwrap_or("") }}" placeholder="instagram.com"></td>
         <td class="p-2">
           <select name="action">
             <option value="allow" {% if action_strs[idx] == "allow" %}selected{% endif %}>allow</option>
@@ -42,7 +40,6 @@
       <tr class="js-rule-row">
         <td class="p-2"><input type="text" name="cidr" placeholder="1.2.3.0/24"></td>
         <td class="p-2"><input type="text" name="client_random_prefix" placeholder="aabbcc"></td>
-        <td class="p-2"><input type="text" name="domain" placeholder="instagram.com"></td>
         <td class="p-2">
           <select name="action">
             <option value="deny">deny</option>

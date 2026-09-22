@@ -8,7 +8,6 @@ use crate::downstream::{
 use crate::forwarder::Forwarder;
 use crate::net_utils::TcpDestination;
 use crate::pipe::DuplexPipe;
-use crate::rules::RulesEngine;
 use crate::{
     authentication, core, datagram_pipe, downstream, forwarder, log_id, log_utils, net_utils, pipe,
     udp_pipe,
@@ -126,17 +125,12 @@ impl Tunnel {
             let shutdown = self.context.shutdown.lock().unwrap();
             (shutdown.notification_handler(), shutdown.completion_guard())
         };
-        let kick = self.context.metrics.connection_kick(&self.id.to_string());
         tokio::select! {
             x = shutdown_notification.wait() => {
                 match x {
                     Ok(_) => self.downstream.graceful_shutdown().await,
                     Err(e) => Err(io::Error::other(format!("{}", e))),
                 }
-            }
-            _ = kick.wait() => {
-                log_id!(debug, self.id, "Tunnel kicked");
-                self.downstream.graceful_shutdown().await
             }
             x = self.listen_inner() => x,
         }
@@ -492,24 +486,6 @@ impl Tunnel {
             user_agent: request.user_agent(),
         };
 
-        if let Some(engine) = context.settings.rules_engine.as_ref() {
-            if let TcpDestination::HostName((host, _)) = &meta.destination {
-                if engine.denies_destination(Some(&meta.client_address), host) {
-                    log_id!(
-                        debug,
-                        request_id,
-                        "TCP connect denied by domain rule: {}",
-                        host
-                    );
-                    return Err((
-                        Some(request),
-                        "Destination denied by filtering rules",
-                        ConnectionError::Other("destination denied".into()),
-                    ));
-                }
-            }
-        }
-
         log_id!(trace, request_id, "TCP connect: connecting to peer");
         let connector = forwarder.tcp_connector();
         let (fwd_rx, fwd_tx) = match tokio::time::timeout(
@@ -553,16 +529,15 @@ impl Tunnel {
             Err(e) => return Err((None, "Failed to complete request", ConnectionError::Io(e))),
         };
 
-        let dstr_rx = if matches!(meta.destination, TcpDestination::HostName(_)) {
-            dstr_rx
-        } else {
-            Box::new(SniPeekSource::new(
-                dstr_rx,
-                context.dest_stats.clone(),
-                context.settings.rules_engine.clone(),
-                meta.client_address,
-                username_opt.clone().unwrap_or_default(),
-            )) as Box<dyn pipe::Source>
+        let dstr_rx = match username_opt {
+            Some(username) if !matches!(meta.destination, TcpDestination::HostName(_)) => {
+                Box::new(SniPeekSource::new(
+                    dstr_rx,
+                    context.dest_stats.clone(),
+                    username,
+                )) as Box<dyn pipe::Source>
+            }
+            _ => dstr_rx,
         };
 
         let mut pipe = DuplexPipe::new(
@@ -656,14 +631,15 @@ impl Tunnel {
                     }
                 };
 
-                let dstr_source = Box::new(DnsPeekSource::new(
-                    dstr_source,
-                    context.dest_stats.clone(),
-                    context.settings.rules_engine.clone(),
-                    client_address,
-                    dns_username.unwrap_or_default(),
-                ))
-                    as Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>;
+                let dstr_source = match dns_username {
+                    Some(username) => Box::new(DnsPeekSource::new(
+                        dstr_source,
+                        context.dest_stats.clone(),
+                        username,
+                    ))
+                        as Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
+                    None => dstr_source,
+                };
 
                 Box::new(udp_pipe::DuplexPipe::new(
                     (dstr_source, dstr_sink),
@@ -725,8 +701,6 @@ impl Tunnel {
 struct SniPeekSource {
     inner: Box<dyn pipe::Source>,
     dest_stats: Arc<DestinationStats>,
-    rules: Option<RulesEngine>,
-    client_ip: std::net::IpAddr,
     username: String,
     buf: Vec<u8>,
     done: bool,
@@ -736,48 +710,38 @@ impl SniPeekSource {
     fn new(
         inner: Box<dyn pipe::Source>,
         dest_stats: Arc<DestinationStats>,
-        rules: Option<RulesEngine>,
-        client_ip: std::net::IpAddr,
         username: String,
     ) -> Self {
         Self {
             inner,
             dest_stats,
-            rules,
-            client_ip,
             username,
             buf: Vec::new(),
             done: false,
         }
     }
 
-    fn observe(&mut self, chunk: &[u8]) -> bool {
+    fn observe(&mut self, chunk: &[u8]) {
         if self.done {
-            return false;
+            return;
         }
         let room = dest_stats::TLS_SNI_MAX.saturating_sub(self.buf.len());
         if room == 0 {
             self.done = true;
             self.buf.clear();
-            return false;
+            return;
         }
         self.buf.extend_from_slice(&chunk[..chunk.len().min(room)]);
         match dest_stats::scan_tls_sni(&self.buf) {
             (dest_stats::TlsSniScan::Found, Some(host)) => {
-                if !self.username.is_empty() {
-                    self.dest_stats.record_host(&self.username, &host);
-                }
+                self.dest_stats.record_host(&self.username, &host);
                 self.done = true;
                 self.buf.clear();
-                self.rules
-                    .as_ref()
-                    .is_some_and(|e| e.denies_destination(Some(&self.client_ip), &host))
             }
-            (dest_stats::TlsSniScan::NeedMore, _) => false,
+            (dest_stats::TlsSniScan::NeedMore, _) => {}
             _ => {
                 self.done = true;
                 self.buf.clear();
-                false
             }
         }
     }
@@ -792,12 +756,7 @@ impl pipe::Source for SniPeekSource {
     async fn read(&mut self) -> io::Result<pipe::Data> {
         let data = self.inner.read().await?;
         if let pipe::Data::Chunk(ref bytes) = data {
-            if self.observe(bytes) {
-                return Err(io::Error::new(
-                    ErrorKind::ConnectionReset,
-                    "destination denied",
-                ));
-            }
+            self.observe(bytes);
         }
         Ok(data)
     }
@@ -810,8 +769,6 @@ impl pipe::Source for SniPeekSource {
 struct DnsPeekSource {
     inner: Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
     dest_stats: Arc<DestinationStats>,
-    rules: Option<RulesEngine>,
-    client_ip: std::net::IpAddr,
     username: String,
 }
 
@@ -819,26 +776,13 @@ impl DnsPeekSource {
     fn new(
         inner: Box<dyn datagram_pipe::Source<Output = downstream::UdpDatagram>>,
         dest_stats: Arc<DestinationStats>,
-        rules: Option<RulesEngine>,
-        client_ip: std::net::IpAddr,
         username: String,
     ) -> Self {
         Self {
             inner,
             dest_stats,
-            rules,
-            client_ip,
             username,
         }
-    }
-
-    fn dns_denied(&self, payload: &[u8]) -> bool {
-        let Some(engine) = self.rules.as_ref() else {
-            return false;
-        };
-        dest_stats::dns_question_names(payload)
-            .iter()
-            .any(|name| engine.denies_destination(Some(&self.client_ip), name))
     }
 }
 
@@ -851,19 +795,12 @@ impl datagram_pipe::Source for DnsPeekSource {
     }
 
     async fn read(&mut self) -> io::Result<Self::Output> {
-        loop {
-            let datagram = self.inner.read().await?;
-            if datagram.meta.destination.port() == net_utils::PLAIN_DNS_PORT_NUMBER {
-                if self.dns_denied(&datagram.payload) {
-                    continue;
-                }
-                if !self.username.is_empty() {
-                    for name in dest_stats::dns_question_names(&datagram.payload) {
-                        self.dest_stats.record_host(&self.username, &name);
-                    }
-                }
+        let datagram = self.inner.read().await?;
+        if datagram.meta.destination.port() == net_utils::PLAIN_DNS_PORT_NUMBER {
+            for name in dest_stats::dns_question_names(&datagram.payload) {
+                self.dest_stats.record_host(&self.username, &name);
             }
-            return Ok(datagram);
         }
+        Ok(datagram)
     }
 }

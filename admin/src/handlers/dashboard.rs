@@ -1,6 +1,4 @@
-use crate::apply::{
-    kick_user_ip, read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show,
-};
+use crate::apply::{read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show};
 use crate::auth::{verify_csrf, Authenticated};
 use crate::i18n::{self, I18n};
 use crate::live::IpView;
@@ -1060,71 +1058,6 @@ pub(crate) fn usage_file_totals(root: &Path) -> (u64, u64) {
         usage.values().map(|u| u.inbound).sum(),
         usage.values().map(|u| u.outbound).sum(),
     )
-}
-
-#[derive(Deserialize, Default)]
-pub struct KickQuery {
-    #[serde(default)]
-    pub user: String,
-    #[serde(default)]
-    pub ip: String,
-}
-
-pub async fn ip_kick(
-    State(state): State<AppState>,
-    Authenticated(session): Authenticated,
-    headers: HeaderMap,
-    Query(q): Query<KickQuery>,
-) -> Response {
-    if verify_csrf(&headers, &session).await.is_err() {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(OpJson {
-                ok: false,
-                message: "csrf".into(),
-            }),
-        )
-            .into_response();
-    }
-    let username = q.user.trim();
-    let ip = q.ip.trim();
-    if username.is_empty()
-        || username.len() > 128
-        || username.contains('\0')
-        || ip.is_empty()
-        || ip.len() > 64
-        || ip.contains('\0')
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(OpJson {
-                ok: false,
-                message: "invalid".into(),
-            }),
-        )
-            .into_response();
-    }
-    let addr = state.paths.metrics_address.clone();
-    let user = username.to_string();
-    let ip = ip.to_string();
-    let kicked = tokio::task::spawn_blocking(move || kick_user_ip(&addr, &user, &ip))
-        .await
-        .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
-    match kicked {
-        Ok(_) => Json(OpJson {
-            ok: true,
-            message: String::new(),
-        })
-        .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OpJson {
-                ok: false,
-                message: e.to_string(),
-            }),
-        )
-            .into_response(),
-    }
 }
 
 pub async fn user_lock(

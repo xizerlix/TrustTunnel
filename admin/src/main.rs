@@ -170,7 +170,6 @@ fn build_router(state: AppState) -> Router {
             get(handlers::dashboard::user_destinations),
         )
         .route("/dashboard/user/lock", post(handlers::dashboard::user_lock))
-        .route("/dashboard/ip/kick", post(handlers::dashboard::ip_kick))
         .route("/dashboard/user/note", post(handlers::dashboard::user_note))
         .route(
             "/dashboard/traffic",
@@ -318,6 +317,9 @@ mod tests {
         ] {
             assert!(html.contains("/static/admin.css"));
         }
+        let login = include_str!("../templates/login.html");
+        assert!(login.contains("MDM Panel"));
+        assert!(!login.contains("TrustTunnel"));
         let dash = include_str!("../templates/dashboard_data.html");
         assert!(dash.contains("js-lock"));
         assert!(dash.contains("width=\"22\""));
@@ -340,8 +342,6 @@ mod tests {
         assert!(dash.contains("stat-btn-dest"));
         assert!(dash.contains("data-agents"));
         assert!(include_str!("../templates/dashboard_data.html").contains("os-ico"));
-        assert!(include_str!("../templates/dashboard_data.html").contains("js-kick-ip"));
-        assert!(include_str!("../templates/rules.html").contains("name=\"domain\""));
         let charts = include_str!("../templates/dashboard.html");
         assert!(charts.contains("traf-sel"));
         assert!(charts.contains("var x = padL + j * bw"));

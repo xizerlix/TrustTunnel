@@ -70,19 +70,13 @@ pub async fn rules_save(
     let map = form_lists(&body);
     let cidrs = form_col(&map, "cidr");
     let prefixes = form_col(&map, "client_random_prefix");
-    let domains = form_col(&map, "domain");
     let actions = form_col(&map, "action");
     let mut new_rules = RulesToml::default();
-    let len = cidrs
-        .len()
-        .max(prefixes.len())
-        .max(domains.len())
-        .max(actions.len());
+    let len = cidrs.len().max(prefixes.len()).max(actions.len());
     for i in 0..len {
         let cidr = cidrs.get(i).cloned().unwrap_or_default();
         let prefix = prefixes.get(i).cloned().unwrap_or_default();
-        let domain = domains.get(i).cloned().unwrap_or_default();
-        if cidr.trim().is_empty() && prefix.trim().is_empty() && domain.trim().is_empty() {
+        if cidr.trim().is_empty() && prefix.trim().is_empty() {
             continue;
         }
         let action = match actions.get(i).map(|s| s.as_str()).unwrap_or("allow") {
@@ -99,11 +93,6 @@ pub async fn rules_save(
                 None
             } else {
                 Some(prefix)
-            },
-            domain: if domain.trim().is_empty() {
-                None
-            } else {
-                Some(domain.trim().to_string())
             },
             action,
         });
@@ -166,12 +155,5 @@ mod tests {
             kept += 1;
         }
         assert_eq!(kept, 1);
-    }
-
-    #[test]
-    fn domain_only_row_is_kept() {
-        let map = form_lists("cidr=&client_random_prefix=&domain=instagram.com&action=deny");
-        let domains = form_col(&map, "domain");
-        assert_eq!(domains[0], "instagram.com");
     }
 }

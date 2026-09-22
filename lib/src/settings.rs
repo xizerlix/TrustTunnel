@@ -1786,13 +1786,6 @@ where
                         .and_then(Item::as_str)
                         .map(|s| s.to_string());
 
-                    let domain = rule_table
-                        .get("domain")
-                        .and_then(Item::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string);
-
                     let action = rule_table
                         .get("action")
                         .and_then(Item::as_str)
@@ -1805,7 +1798,6 @@ where
                     Some(rules::Rule {
                         cidr,
                         client_random_prefix,
-                        domain,
                         action,
                     })
                 })
