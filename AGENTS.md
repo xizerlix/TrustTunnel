@@ -232,7 +232,10 @@ protocol/deep-link format, library API) when relevant.
    zip contents in git.
    Admin 2FA is TOTP (`totp_enabled` / `totp_secret` in `admin.toml`). The
    shared secret MUST stay on the server; do not commit it. The setup card
-   MUST show an SVG QR of the otpauth URI (no CDN). Login history
+   MUST show an SVG QR of the otpauth URI (no CDN). Disable 2FA MUST use a
+   visible `bg-indigo-600` button (classes that exist in `admin.css`;
+   `bg-slate-700` is not shipped) plus a hint that a current app code and
+   that button turn 2FA off. Login history
    lives next to `admin.toml` as `login_history.json` (time + IP) and is
    shown from Logs → Sign-in history.
    Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs

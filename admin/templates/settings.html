@@ -32,13 +32,14 @@
   <p class="text-slate-600 text-sm">{{ t.totp_help }}</p>
   {% if totp_on %}
     <p class="text-sm font-medium text-emerald-800">{{ t.totp_on_label }}</p>
+    <p class="text-slate-600 text-sm">{{ t.totp_disable_help }}</p>
     <form method="post" action="/settings/totp/disable" class="space-y-3">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <label class="block">
         <span class="block text-sm font-medium mb-1">{{ t.totp_code }}</span>
         <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="8" required>
       </label>
-      <button type="submit" class="bg-slate-700 text-white px-6 py-2 rounded font-medium hover:bg-slate-800">{{ t.totp_disable }}</button>
+      <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.totp_disable }}</button>
     </form>
   {% else %}
     {% if let Some(secret) = totp_secret %}

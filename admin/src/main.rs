@@ -349,6 +349,11 @@ mod tests {
         assert!(include_str!("../templates/settings.html").contains("backup_help"));
         assert!(include_str!("../templates/settings.html").contains("totp_help"));
         assert!(include_str!("../templates/settings.html").contains("totp_qr"));
+        let settings = include_str!("../templates/settings.html");
+        assert!(settings.contains("totp_disable_help"));
+        assert!(settings.contains("/settings/totp/disable"));
+        assert!(settings.contains("bg-indigo-600"));
+        assert!(!settings.contains("bg-slate-700"));
         assert!(include_str!("../templates/logs.html").contains("/logs/logins"));
         let login = include_str!("../templates/login.html");
         assert!(login.contains("MDM Panel"));

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin 2FA disable is a visible indigo button plus a hint that a
+  code from the app turns 2FA off. Admin and endpoint crate versions are
+  1.1.37.
 - [Fix] Admin TOTP setup shows a scannable QR; admin crate version is 1.1.36.
 - [Feature] Admin Settings 2FA (TOTP) and Logs sign-in history (time + IP).
 - [Feature] Admin Settings has Backup: a zip of VPN/admin data, crontab,
