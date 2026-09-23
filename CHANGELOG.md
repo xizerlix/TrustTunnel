@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Admin IP modal shows a map for public IPs even when monitor.sh
+  cached geo without lat/lon; lookup uses curl + ipwho.is fallback.
+  Admin and endpoint crate versions are 1.1.38.
 - [Fix] Admin 2FA disable is a visible indigo button plus a hint that a
   code from the app turns 2FA off. Admin and endpoint crate versions are
   1.1.37.

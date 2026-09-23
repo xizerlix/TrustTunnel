@@ -49,6 +49,7 @@
      data-geo-loading="{{ t.geo_loading }}"
      data-geo-error="{{ t.geo_error }}"
      data-geo-private="{{ t.geo_private }}"
+     data-geo-nomap="{{ t.geo_no_map }}"
      data-geo-client="{{ t.geo_client }}"
      data-dest-title="{{ t.dest_title }}"
      data-dest-loading="{{ t.dest_loading }}"
@@ -213,10 +214,12 @@
           return;
         }
         var html = '';
-        if (d.map_url) {
+        if (d.private) {
+          html += '<p class="text-slate-500 mb-2">' + i18n.getAttribute('data-geo-private') + '</p>';
+        } else if (d.map_url) {
           html += '<iframe class="w-full h-44 rounded mb-3 border-0" src="' + d.map_url + '"></iframe>';
         } else {
-          html += '<p class="text-slate-500 mb-2">' + i18n.getAttribute('data-geo-private') + '</p>';
+          html += '<p class="text-slate-500 mb-2">' + i18n.getAttribute('data-geo-nomap') + '</p>';
         }
         function row(k, v) {
           if (!v) return;

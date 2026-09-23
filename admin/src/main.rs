@@ -392,5 +392,6 @@ mod tests {
         assert!(include_str!("handlers/vpn.rs").contains("schedule_apply"));
         assert!(include_str!("apply.rs").contains("APPLY_DEFER"));
         assert!(charts.contains("data-geo-client"));
+        assert!(charts.contains("data-geo-nomap"));
     }
 }

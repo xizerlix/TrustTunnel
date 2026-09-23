@@ -238,6 +238,11 @@ protocol/deep-link format, library API) when relevant.
    that button turn 2FA off. Login history
    lives next to `admin.toml` as `login_history.json` (time + IP) and is
    shown from Logs → Sign-in history.
+   Dashboard IP modal MUST refetch geo when `/tmp/vpn_times/geo` has city/ISP
+   but no lat/lon (monitor.sh / bot cache omit coordinates). Click MUST not
+   share the 3s kind-lookup throttle. Prefer `curl` to ip-api.com (same host
+   as the bot) then ipwho.is for coordinates; do not label a public IP as
+   private just because the map URL is empty.
    Admin HTML MUST NOT load scripts or stylesheets from third-party CDNs
    (`cdn.tailwindcss.com`, unpkg, jsDelivr, …). Ship CSS with the binary
    (`admin/static/admin.css` at `/static/admin.css`). Do not add htmx unless

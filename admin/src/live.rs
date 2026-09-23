@@ -64,6 +64,8 @@ pub struct GeoDetail {
     pub mobile: bool,
     pub proxy: bool,
     pub hosting: bool,
+    #[serde(default)]
+    pub private: bool,
     pub map_url: String,
 }
 
@@ -170,25 +172,15 @@ impl LiveCache {
             return GeoDetail {
                 query: ip.to_string(),
                 kind: IpKind::Home.as_str(),
+                private: true,
                 ..GeoDetail::default()
             };
         }
         if let Some(d) = disk_geo_detail(ip) {
-            if !(d.city.is_empty() && d.country.is_empty() && d.lat.is_none()) {
+            if has_coords(&d) {
                 return d;
             }
         }
-        let mut last = self.last_lookup.lock().unwrap();
-        if last.elapsed() < Duration::from_secs(3) {
-            drop(last);
-            return disk_geo_detail(ip).unwrap_or(GeoDetail {
-                query: ip.to_string(),
-                kind: IpKind::Home.as_str(),
-                ..GeoDetail::default()
-            });
-        }
-        *last = Instant::now();
-        drop(last);
         if let Some(d) = fetch_geo_detail(ip) {
             save_disk_geo_detail(ip, &d);
             self.geo.lock().unwrap().insert(
@@ -200,11 +192,11 @@ impl LiveCache {
             );
             return d;
         }
-        GeoDetail {
+        disk_geo_detail(ip).unwrap_or(GeoDetail {
             query: ip.to_string(),
             kind: self.lookup_kind(ip).as_str(),
             ..GeoDetail::default()
-        }
+        })
     }
 }
 
@@ -344,7 +336,7 @@ fn detail_from_fields(ip: &str, g: GeoFields) -> GeoDetail {
     let mut map_url = String::new();
     if let (Some(lat), Some(lon)) = (g.lat, g.lon) {
         if lat != 0.0 || lon != 0.0 {
-            let pad = 0.35;
+            let pad = 0.08;
             map_url = format!(
                 "https://www.openstreetmap.org/export/embed.html?bbox={left}%2C{bottom}%2C{right}%2C{top}&layer=mapnik&marker={lat}%2C{lon}",
                 left = lon - pad,
@@ -376,6 +368,7 @@ fn detail_from_fields(ip: &str, g: GeoFields) -> GeoDetail {
         mobile: g.mobile,
         proxy: g.proxy,
         hosting: g.hosting,
+        private: false,
         map_url,
     }
 }
@@ -414,23 +407,141 @@ fn save_disk_geo_detail(ip: &str, d: &GeoDetail) {
     let _ = std::fs::write(geo_path(ip), body.to_string());
 }
 
+fn has_coords(d: &GeoDetail) -> bool {
+    matches!((d.lat, d.lon), (Some(lat), Some(lon)) if lat != 0.0 || lon != 0.0)
+}
+
 fn fetch_geo_detail(ip: &str) -> Option<GeoDetail> {
-    let body = http_get_ip_api(ip)?;
+    let api = fetch_ip_api(ip);
+    if api.as_ref().is_some_and(has_coords) {
+        return api;
+    }
+    let who = fetch_ipwho(ip);
+    match (api, who) {
+        (Some(a), Some(b)) => Some(merge_geo(a, b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+fn merge_geo(mut a: GeoDetail, b: GeoDetail) -> GeoDetail {
+    if !has_coords(&a) && has_coords(&b) {
+        a.lat = b.lat;
+        a.lon = b.lon;
+        a.map_url = b.map_url;
+        if a.city.is_empty() {
+            a.city = b.city;
+        }
+        if a.country.is_empty() {
+            a.country = b.country;
+        }
+        if a.region.is_empty() {
+            a.region = b.region;
+        }
+    }
+    a
+}
+
+fn fetch_ip_api(ip: &str) -> Option<GeoDetail> {
+    let url = format!(
+        "http://ip-api.com/json/{ip}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query"
+    );
+    let body = curl_json(&url).or_else(|| tcp_get_ip_api(ip))?;
     let g = parse_geo_fields(&body)?;
     Some(detail_from_fields(ip, g))
 }
 
-fn http_get_ip_api(ip: &str) -> Option<String> {
+fn fetch_ipwho(ip: &str) -> Option<GeoDetail> {
+    let body = curl_json(&format!("https://ipwho.is/{ip}"))?;
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    if v.get("success") == Some(&serde_json::Value::Bool(false)) {
+        return None;
+    }
+    let conn = v.get("connection");
+    let tz = v.get("timezone");
+    let timezone = tz
+        .and_then(|t| t.get("id").and_then(|x| x.as_str()).or_else(|| t.as_str()))
+        .unwrap_or("")
+        .to_string();
+    let asn = conn
+        .and_then(|c| c.get("asn"))
+        .map(|x| match x {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        })
+        .unwrap_or_default();
+    let g = GeoFields {
+        status: "success".into(),
+        country: json_str(&v, "country"),
+        region_name: json_str(&v, "region"),
+        city: json_str(&v, "city"),
+        zip: json_str(&v, "postal"),
+        lat: v.get("latitude").and_then(|x| x.as_f64()),
+        lon: v.get("longitude").and_then(|x| x.as_f64()),
+        timezone,
+        isp: conn
+            .and_then(|c| c.get("isp"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .into(),
+        org: conn
+            .and_then(|c| c.get("org"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .into(),
+        asn,
+        mobile: false,
+        proxy: false,
+        hosting: false,
+        query: json_str(&v, "ip"),
+    };
+    Some(detail_from_fields(ip, g))
+}
+
+fn json_str(v: &serde_json::Value, key: &str) -> String {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn curl_json(url: &str) -> Option<String> {
+    let out = std::process::Command::new("curl")
+        .args([
+            "-sS",
+            "--connect-timeout",
+            "3",
+            "--max-time",
+            "6",
+            "-L",
+            url,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(out.stdout).ok()?;
+    let t = s.trim();
+    if t.starts_with('{') {
+        Some(t.to_string())
+    } else {
+        None
+    }
+}
+
+fn tcp_get_ip_api(ip: &str) -> Option<String> {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::net::ToSocketAddrs;
     let addr = "ip-api.com:80".to_socket_addrs().ok()?.next()?;
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800)).ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(3)).ok()?;
     stream
-        .set_read_timeout(Some(Duration::from_millis(1200)))
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .ok()?;
     stream
-        .set_write_timeout(Some(Duration::from_secs(1)))
+        .set_write_timeout(Some(Duration::from_secs(3)))
         .ok()?;
     let path = format!(
         "/json/{ip}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query"
@@ -452,7 +563,10 @@ fn http_get_ip_api(ip: &str) -> Option<String> {
         }
     }
     let text = String::from_utf8_lossy(&buf);
-    Some(text.split("\r\n\r\n").nth(1)?.to_string())
+    text.split("\r\n\r\n")
+        .nth(1)
+        .or_else(|| text.split("\n\n").nth(1))
+        .map(str::to_string)
 }
 
 pub fn parse_host_snapshot() -> HostSnapshot {
@@ -886,6 +1000,30 @@ mod tests {
             parse_geo_json("{\"mobile\":false,\"proxy\":false,\"hosting\":false}"),
             Some(IpKind::Home)
         );
+    }
+
+    #[test]
+    fn bot_geo_cache_without_coords_is_not_a_map() {
+        let g = parse_geo_fields(
+            r#"{"status":"success","country":"Russia","city":"Moscow","mobile":false,"proxy":false,"hosting":false}"#,
+        )
+        .unwrap();
+        let d = detail_from_fields("1.2.3.4", g);
+        assert!(!has_coords(&d));
+        assert!(d.map_url.is_empty());
+    }
+
+    #[test]
+    fn coords_build_osm_embed() {
+        let g = parse_geo_fields(
+            r#"{"status":"success","lat":55.75,"lon":37.62,"city":"Moscow","country":"Russia"}"#,
+        )
+        .unwrap();
+        let d = detail_from_fields("8.8.8.8", g);
+        assert!(has_coords(&d));
+        assert!(d.map_url.contains("openstreetmap.org"));
+        assert!(d.map_url.contains("55.75"));
+        assert!(!d.private);
     }
 
     #[test]
