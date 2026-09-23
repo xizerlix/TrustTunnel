@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Admin Settings can turn off password sign-in (`password_login`
+  in admin.toml) for SSH-tunnel-only access to 127.0.0.1:8443. The card
+  warns this is dangerous on a public login page. Admin and endpoint crate
+  versions are 1.1.41.
 - [Feature] Settings Backup includes `/root/.ssh` and sshd config (not host
   keys). Restore copies them, turns off password SSH, and writes
   `[metrics] per_client_metrics = true` if missing so the dashboard can

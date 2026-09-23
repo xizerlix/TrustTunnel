@@ -225,6 +225,10 @@ fn build_router(state: AppState) -> Router {
             "/settings/backup",
             post(handlers::settings::settings_backup),
         )
+        .route(
+            "/settings/password-login",
+            post(handlers::settings::settings_password_login),
+        )
         .route("/settings/totp/start", post(handlers::settings::totp_start))
         .route(
             "/settings/totp/confirm",
@@ -236,6 +240,10 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/csrf", get(handlers::login::csrf_token))
         .route("/static/admin.css", get(admin_css))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::inject_open_session,
+        ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::HeaderName::from_static("x-content-type-options"),
             HeaderValue::from_static("nosniff"),
@@ -352,6 +360,10 @@ mod tests {
         let settings = include_str!("../templates/settings.html");
         assert!(settings.contains("totp_disable_help"));
         assert!(settings.contains("/settings/totp/disable"));
+        assert!(settings.contains("password_login_help"));
+        assert!(settings.contains("/settings/password-login"));
+        assert!(settings.contains("bg-rose-100"));
+        assert!(!settings.contains("bg-amber-50"));
         assert!(settings.contains("bg-indigo-600"));
         assert!(!settings.contains("bg-slate-700"));
         assert!(include_str!("../templates/logs.html").contains("/logs/logins"));

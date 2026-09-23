@@ -23,9 +23,11 @@ pub struct SettingsTemplate {
     pub totp_secret: Option<String>,
     pub totp_otpauth: Option<String>,
     pub totp_qr: Option<String>,
+    pub password_login: bool,
 }
 
 fn page(
+    state: &AppState,
     session: &crate::auth::Session,
     headers: &HeaderMap,
     status: Option<String>,
@@ -51,6 +53,7 @@ fn page(
         totp_secret,
         totp_otpauth,
         totp_qr,
+        password_login: AdminConfig::load_or_default(&state.paths.admin_toml).password_login,
     }
 }
 
@@ -65,6 +68,7 @@ pub async fn settings_form(
 ) -> Response {
     let pending = state.totp_setup.read().await.clone();
     page(
+        &state,
         &session,
         &headers,
         None,
@@ -119,6 +123,7 @@ pub async fn settings_password(
     *state.bcrypt_hash.write().await = new_hash;
     let t = i18n::t(i18n::from_headers(&headers));
     Ok(page(
+        &state,
         &session,
         &headers,
         Some(t.password_updated.to_string()),
@@ -128,6 +133,37 @@ pub async fn settings_password(
     )
     .into_response()
     .with_status(StatusCode::OK))
+}
+
+pub async fn settings_password_login(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+    body: String,
+) -> AdminResult<Response> {
+    verify_csrf_from_form(&headers, &body, &session).await?;
+    let form: PasswordLoginForm = serde_urlencoded::from_str(&body)
+        .map_err(|e| AdminError::Validation(format!("invalid form: {e}")))?;
+    let enable = form.password_login == "on";
+    let mut cfg = AdminConfig::load_or_default(&state.paths.admin_toml);
+    cfg.password_login = enable;
+    cfg.save(&state.paths.admin_toml)?;
+    let t = i18n::t(i18n::from_headers(&headers));
+    let status = if enable {
+        t.password_login_enabled_ok
+    } else {
+        t.password_login_disabled_ok
+    };
+    Ok(page(
+        &state,
+        &session,
+        &headers,
+        Some(status.to_string()),
+        None,
+        cfg.totp_on(),
+        None,
+    )
+    .into_response())
 }
 
 pub async fn totp_start(
@@ -140,6 +176,7 @@ pub async fn totp_start(
     if totp_on_file(&state) {
         let t = i18n::t(i18n::from_headers(&headers));
         return Ok(page(
+            &state,
             &session,
             &headers,
             None,
@@ -151,7 +188,7 @@ pub async fn totp_start(
     }
     let secret = crate::totp::generate_secret();
     *state.totp_setup.write().await = Some(secret.clone());
-    Ok(page(&session, &headers, None, None, false, Some(secret)).into_response())
+    Ok(page(&state, &session, &headers, None, None, false, Some(secret)).into_response())
 }
 
 pub async fn totp_confirm(
@@ -166,6 +203,7 @@ pub async fn totp_confirm(
     let t = i18n::t(i18n::from_headers(&headers));
     let Some(secret) = state.totp_setup.read().await.clone() else {
         return Ok(page(
+            &state,
             &session,
             &headers,
             None,
@@ -178,6 +216,7 @@ pub async fn totp_confirm(
     let now = chrono::Utc::now().timestamp().max(0) as u64;
     if !crate::totp::verify(&secret, &form.totp_code, now) {
         return Ok(page(
+            &state,
             &session,
             &headers,
             None,
@@ -193,6 +232,7 @@ pub async fn totp_confirm(
     cfg.save(&state.paths.admin_toml)?;
     *state.totp_setup.write().await = None;
     Ok(page(
+        &state,
         &session,
         &headers,
         Some(t.totp_enabled_ok.to_string()),
@@ -217,6 +257,7 @@ pub async fn totp_disable(
     let now = chrono::Utc::now().timestamp().max(0) as u64;
     if !cfg.totp_on() || !crate::totp::verify(&cfg.totp_secret, &form.totp_code, now) {
         return Ok(page(
+            &state,
             &session,
             &headers,
             None,
@@ -232,6 +273,7 @@ pub async fn totp_disable(
     cfg.save(&state.paths.admin_toml)?;
     *state.totp_setup.write().await = None;
     Ok(page(
+        &state,
         &session,
         &headers,
         Some(t.totp_disabled_ok.to_string()),
@@ -287,6 +329,11 @@ pub struct PasswordForm {
     pub current_password: String,
     pub new_password: String,
     pub confirm_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct PasswordLoginForm {
+    pub password_login: String,
 }
 
 #[derive(Deserialize)]

@@ -1,8 +1,12 @@
-use crate::error::AdminError;
-use axum::extract::{FromRef, FromRequestParts};
-use axum::http::header::SET_COOKIE;
+use axum::extract::{FromRef, FromRequestParts, Request, State};
+use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::request::Parts;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue};
+use axum::middleware::Next;
+use axum::response::Response;
+use crate::config::AdminConfig;
+use crate::error::AdminError;
+use crate::state::AppState;
 use rand::RngCore;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -203,6 +207,58 @@ pub fn extract_csrf_cookie(headers: &HeaderMap) -> Option<String> {
 
 pub fn extract_totp_cookie(headers: &HeaderMap) -> Option<String> {
     cookie_value(headers, TOTP_COOKIE)
+}
+
+pub async fn inject_open_session(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    if AdminConfig::load_or_default(&state.paths.admin_toml).password_login {
+        return next.run(request).await;
+    }
+    let ttl = Duration::from_secs(state.config.session_ttl_secs);
+    if let Some(token) = extract_session_cookie(request.headers()) {
+        if state.sessions.touch(&token, ttl).await.is_some() {
+            return next.run(request).await;
+        }
+    }
+    let session = state.sessions.create("admin", ttl).await;
+    merge_request_cookie(request.headers_mut(), SESSION_COOKIE, &session.token);
+    merge_request_cookie(request.headers_mut(), CSRF_COOKIE, &session.csrf);
+    let mut resp = next.run(request).await;
+    set_cookies(
+        resp.headers_mut(),
+        build_session_cookies(
+            &session.token,
+            state.config.session_ttl_secs,
+            state.secure_cookies,
+        ),
+    );
+    let csrf_header = format!(
+        "{}={}",
+        CSRF_COOKIE,
+        build_csrf_cookie(
+            &session.csrf,
+            state.config.session_ttl_secs,
+            state.secure_cookies,
+        )
+    );
+    if let Ok(v) = csrf_header.parse::<HeaderValue>() {
+        resp.headers_mut().append(SET_COOKIE, v);
+    }
+    resp
+}
+
+fn merge_request_cookie(headers: &mut HeaderMap, name: &str, value: &str) {
+    let extra = format!("{name}={value}");
+    let merged = match headers.get(COOKIE).and_then(|v| v.to_str().ok()) {
+        Some(c) if !c.is_empty() => format!("{c}; {extra}"),
+        _ => extra,
+    };
+    if let Ok(v) = HeaderValue::from_str(&merged) {
+        headers.insert(COOKIE, v);
+    }
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {

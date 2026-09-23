@@ -27,6 +27,26 @@
   <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.update_password }}</button>
 </form>
 
+<h2 class="text-xl font-semibold mt-10 mb-2">{{ t.password_login_title }}</h2>
+<div class="max-w-md bg-white p-6 rounded shadow space-y-4">
+  <p class="text-sm text-rose-800 bg-rose-100 p-3 rounded">{{ t.password_login_help }}</p>
+  {% if password_login %}
+    <p class="text-sm text-slate-600">{{ t.password_login_on_label }}</p>
+    <form method="post" action="/settings/password-login">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="password_login" value="off">
+      <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.password_login_disable }}</button>
+    </form>
+  {% else %}
+    <p class="text-sm font-medium text-rose-800">{{ t.password_login_off_label }}</p>
+    <form method="post" action="/settings/password-login">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="password_login" value="on">
+      <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded font-medium hover:bg-indigo-700">{{ t.password_login_enable }}</button>
+    </form>
+  {% endif %}
+</div>
+
 <h2 class="text-xl font-semibold mt-10 mb-2">{{ t.totp_title }}</h2>
 <div class="max-w-md bg-white p-6 rounded shadow space-y-4">
   <p class="text-slate-600 text-sm">{{ t.totp_help }}</p>

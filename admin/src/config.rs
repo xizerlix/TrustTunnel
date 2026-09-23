@@ -12,6 +12,12 @@ pub struct AdminConfig {
     pub totp_enabled: bool,
     #[serde(default)]
     pub totp_secret: String,
+    #[serde(default = "default_password_login")]
+    pub password_login: bool,
+}
+
+fn default_password_login() -> bool {
+    true
 }
 
 impl Default for AdminConfig {
@@ -23,6 +29,7 @@ impl Default for AdminConfig {
             login_rate_per_min: 5,
             totp_enabled: false,
             totp_secret: String::new(),
+            password_login: true,
         }
     }
 }
@@ -93,5 +100,28 @@ mod tests {
         let loaded = AdminConfig::load_or_default(&path);
         assert!(loaded.totp_on());
         assert_eq!(loaded.totp_secret, "MFRGGZDFMZTWQ2LK");
+        assert!(loaded.password_login);
+    }
+
+    #[test]
+    fn missing_password_login_defaults_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("admin.toml");
+        std::fs::write(
+            &path,
+            "bind = \"127.0.0.1:8443\"\nbcrypt_hash = \"h\"\nsession_ttl_secs = 1800\nlogin_rate_per_min = 5\n",
+        )
+        .unwrap();
+        assert!(AdminConfig::load_or_default(&path).password_login);
+    }
+
+    #[test]
+    fn password_login_false_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("admin.toml");
+        let mut cfg = AdminConfig::default();
+        cfg.password_login = false;
+        cfg.save(&path).unwrap();
+        assert!(!AdminConfig::load_or_default(&path).password_login);
     }
 }

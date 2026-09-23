@@ -253,6 +253,12 @@ protocol/deep-link format, library API) when relevant.
    that button turn 2FA off. Login history
    lives next to `admin.toml` as `login_history.json` (time + IP) and is
    shown from Logs → Sign-in history.
+   Admin Settings MAY set `password_login = false` in `admin.toml` (default
+   true). Off skips the login page and 2FA: anyone who can reach the panel
+   is an administrator. The Settings card MUST warn this is only for
+   `127.0.0.1` plus an SSH tunnel, never for a public login page. Use CSS
+   classes that exist in `admin.css` (`bg-rose-100`, not unshipped amber
+   utilities).
    Dashboard IP modal MUST refetch geo when `/tmp/vpn_times/geo` has city/ISP
    but no lat/lon (monitor.sh / bot cache omit coordinates). Click MUST not
    share the 3s kind-lookup throttle. Prefer `curl` to ip-api.com (same host

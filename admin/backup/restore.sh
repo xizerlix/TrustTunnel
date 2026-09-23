@@ -25,7 +25,7 @@ install_release_binaries() {
   default_tag=""
   default_tag=$(curl -fsS --max-time 8 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
     | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null || true)
-  [ -n "$default_tag" ] || default_tag="custom-1.1.40"
+  [ -n "$default_tag" ] || default_tag="custom-1.1.41"
   say ""
   say "VPN/admin binaries: download from GitHub if missing or truncated."
   printf "Release tag [%s]: " "$default_tag"

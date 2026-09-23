@@ -47,7 +47,13 @@ fn login_page(
     }
 }
 
-pub async fn login_form(headers: HeaderMap) -> Response {
+pub async fn login_form(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(token) = extract_session_cookie(&headers) {
+        let ttl = Duration::from_secs(state.config.session_ttl_secs);
+        if state.sessions.touch(&token, ttl).await.is_some() {
+            return Redirect::to("/dashboard").into_response();
+        }
+    }
     login_page(&headers, None, String::new(), false).into_response()
 }
 
