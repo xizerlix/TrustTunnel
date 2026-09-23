@@ -51,6 +51,8 @@ vpn-libs-endpoint/
 ├── scripts/                   # Automation scripts
 │   ├── hooks/pre-commit       # Git pre-commit hook (lint + test)
 │   ├── install.sh             # Release installation script
+│   ├── open-admin.ps1         # Windows: SSH -L 8443 + Firefox to admin
+│   ├── open-admin.sh          # POSIX: same tunnel + Firefox
 │   └── trusttunnel.service.template  # systemd service template
 ├── bamboo-specs/              # Bamboo CI pipeline definitions
 ├── .github/workflows/         # GitHub Actions (test, md-lint, security-audit, bench)
@@ -226,13 +228,22 @@ protocol/deep-link format, library API) when relevant.
    Do not put bot tokens in the git repository.
    Admin Settings Backup MUST POST `/settings/backup` with CSRF and return
    a zip (configs under `/opt/trusttunnel`, `admin.toml`, systemd units,
-   `crontab -l`, `/root` scripts referenced from cron, plus `restore.sh`).
-   Restore MUST issue a new Let's Encrypt cert for a new hostname
+   `crontab -l`, `/root` scripts referenced from cron, `/root/.ssh`
+   (`authorized_keys` and identity keys), `/etc/ssh/sshd_config` and
+   `sshd_config.d`, plus `restore.sh`). Do not copy SSH host keys into the
+   zip. Restore MUST issue a new Let's Encrypt cert for a new hostname
    (DuckDNS instructions); do not reuse the old domain. If endpoint/admin
    binaries are missing from the zip, restore MUST download the GitHub
    release tarball. Restore MUST start `/root/bot_listener.sh` (and
-   telegram bot if present) instead of waiting for `@reboot`. Enable
-   `certbot.timer` and a renew deploy hook that HUP's the endpoint.
+   telegram bot if present) instead of waiting for `@reboot`. Restore MUST
+   write `/etc/ssh/sshd_config.d/99-tt-pubkey-only.conf` (`PasswordAuthentication
+   no`) and `sshd -t` before reload. Restore MUST ensure `vpn.toml` has
+   `[metrics]` with `per_client_metrics = true` (otherwise the endpoint does
+   not bind `127.0.0.1:1987` and `/clients` is empty). Enable
+   `certbot.timer` (it *checks* about every 12 hours; Let's Encrypt renews
+   only when fewer than ~30 days remain) and a renew deploy hook that HUP's
+   the endpoint so a monthly reboot is not required to pick up the new
+   files. Saving VPN settings MUST keep or insert that `[metrics]` block.
    Do not put backup zip contents in git.
    Admin 2FA is TOTP (`totp_enabled` / `totp_secret` in `admin.toml`). The
    shared secret MUST stay on the server; do not commit it. The setup card

@@ -25,7 +25,7 @@ install_release_binaries() {
   default_tag=""
   default_tag=$(curl -fsS --max-time 8 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
     | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null || true)
-  [ -n "$default_tag" ] || default_tag="custom-1.1.39"
+  [ -n "$default_tag" ] || default_tag="custom-1.1.40"
   say ""
   say "VPN/admin binaries: download from GitHub if missing or truncated."
   printf "Release tag [%s]: " "$default_tag"
@@ -79,6 +79,58 @@ start_root_daemons() {
   done
 }
 
+fix_ssh_perms() {
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  [ -f /root/.ssh/authorized_keys ] && chmod 600 /root/.ssh/authorized_keys
+  [ -f /root/.ssh/config ] && chmod 600 /root/.ssh/config
+  for f in /root/.ssh/id_* /root/.ssh/*.pem; do
+    [ -e "$f" ] || continue
+    case "$f" in
+      *.pub) chmod 644 "$f" ;;
+      *) chmod 600 "$f" ;;
+    esac
+  done
+}
+
+harden_sshd() {
+  mkdir -p /etc/ssh/sshd_config.d
+  cat > /etc/ssh/sshd_config.d/99-tt-pubkey-only.conf <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin prohibit-password
+EOF
+  if command -v sshd >/dev/null 2>&1 && sshd -t; then
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+    say "sshd: password login disabled (pubkey only)"
+  else
+    say "WARNING: sshd -t failed; password login was not reloaded. Check /root/.ssh/authorized_keys before closing this session."
+  fi
+}
+
+ensure_vpn_metrics() {
+  vpn="/opt/trusttunnel/vpn.toml"
+  [ -f "$vpn" ] || return 0
+  python3 - "$vpn" <<'PY' || true
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+text = p.read_text(encoding="utf-8")
+if "[metrics]" in text:
+    sys.exit(0)
+block = """
+[metrics]
+address = "127.0.0.1:1987"
+per_client_metrics = true
+"""
+if not text.endswith("\n"):
+    text += "\n"
+p.write_text(text + block, encoding="utf-8")
+print("appended [metrics] per_client_metrics = true to vpn.toml")
+PY
+}
+
 here="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 cd "$here"
 
@@ -111,7 +163,7 @@ say "Installing packages (curl, certbot, python3, jq)..."
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq curl certbot ca-certificates python3 jq >/dev/null
+  apt-get install -y -qq curl certbot ca-certificates python3 jq openssh-server >/dev/null
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y curl certbot python3 jq
 elif command -v yum >/dev/null 2>&1; then
@@ -159,6 +211,18 @@ if [ -d data/etc/caddy ]; then
   mkdir -p /etc/caddy
   cp -a data/etc/caddy/. /etc/caddy/ 2>/dev/null || true
 fi
+if [ -d data/etc/ssh ]; then
+  mkdir -p /etc/ssh/sshd_config.d
+  if [ -f data/etc/ssh/sshd_config ]; then
+    cp -a /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.ttrestore 2>/dev/null || true
+    cp -a data/etc/ssh/sshd_config /etc/ssh/sshd_config
+  fi
+  if [ -d data/etc/ssh/sshd_config.d ]; then
+    cp -a data/etc/ssh/sshd_config.d/. /etc/ssh/sshd_config.d/ 2>/dev/null || true
+  fi
+fi
+fix_ssh_perms
+harden_sshd
 
 chmod +x /opt/trusttunnel/trusttunnel_endpoint 2>/dev/null || true
 chmod +x /opt/trusttunnel/trusttunnel_admin 2>/dev/null || true
@@ -200,6 +264,8 @@ text = re.sub(r'(?m)^(private_key_path\s*=\s*)".*"', r'\1"' + key + '"', text)
 open(path, "w", encoding="utf-8").write(text)
 PY
 fi
+
+ensure_vpn_metrics
 
 if [ -f data/cron/root.crontab ]; then
   say "Restoring crontab..."
@@ -248,5 +314,7 @@ say "Endpoint should listen on :443. Admin default is 127.0.0.1:8443 (SSH tunnel
 say "  ssh -L 8443:127.0.0.1:8443 root@THIS_HOST"
 say "  then open http://127.0.0.1:8443/"
 say "Point clients at the new hostname: $NEW_HOST"
-say "certbot.timer renews the cert; a deploy hook sends SIGHUP to trusttunnel."
+say "certbot.timer only *checks* about every 12 hours; it renews when <~30 days remain."
+say "A deploy hook sends SIGHUP so the endpoint loads the new cert without waiting for reboot."
+say "Password SSH is off; keep an SSH session until you confirm key login."
 say ""

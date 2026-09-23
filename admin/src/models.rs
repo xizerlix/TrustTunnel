@@ -289,6 +289,15 @@ impl VpnToml {
     pub fn to_string_pretty(&self) -> anyhow::Result<String> {
         Ok(toml::to_string_pretty(self)?)
     }
+    pub fn ensure_dashboard_metrics(&mut self) {
+        if self.metrics.is_none() {
+            self.metrics = Some(MetricsToml {
+                address: default_metrics_addr(),
+                request_timeout_secs: default_metrics_timeout(),
+                per_client_metrics: true,
+            });
+        }
+    }
 }
 
 #[cfg(test)]

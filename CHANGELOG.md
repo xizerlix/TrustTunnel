@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Settings Backup includes `/root/.ssh` and sshd config (not host
+  keys). Restore copies them, turns off password SSH, and writes
+  `[metrics] per_client_metrics = true` if missing so the dashboard can
+  reach `:1987`. Saving VPN settings keeps that metrics block.
+  `scripts/open-admin.ps1` opens an SSH tunnel and Firefox to local 8443.
+  Admin and endpoint crate versions are 1.1.40.
 - [Fix] Restore downloads GitHub binaries if they were missing from the zip,
   starts Telegram bots, enables certbot.timer plus a SIGHUP deploy hook.
   Admin and endpoint crate versions are 1.1.39.

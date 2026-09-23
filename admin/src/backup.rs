@@ -23,7 +23,10 @@ const EXTRA_PATHS: &[&str] = &[
     "/etc/systemd/system/trusttunnel-admin.service",
     "/etc/caddy/Caddyfile",
     "/tmp/trusttunnel_admin_seen.json",
+    "/etc/ssh/sshd_config",
 ];
+
+const EXTRA_TREES: &[&str] = &["/root/.ssh", "/etc/ssh/sshd_config.d"];
 
 pub struct BackupInput {
     pub root: PathBuf,
@@ -53,6 +56,9 @@ pub fn collect_live(root: PathBuf, admin_toml: PathBuf) -> BackupInput {
     }
     extra.extend(paths_from_crontab(&crontab_text));
     extra.push(PathBuf::from("/tmp/vpn_times"));
+    for dir in EXTRA_TREES {
+        extra.extend(walkdir(Path::new(dir)));
+    }
     BackupInput {
         root,
         admin_toml,
@@ -125,7 +131,9 @@ fn readme_text() -> String {
     s.push_str("  3. sudo ./restore.sh\n\n");
     s.push_str("The script asks for a new hostname. Register it at https://www.duckdns.org\n");
     s.push_str("then Let's Encrypt issues a new certificate (old domain is not reused).\n");
-    s.push_str("Users, quotas, rules, admin password, cron and bot scripts are restored.\n");
+    s.push_str("Users, quotas, rules, admin password, cron, bot scripts, SSH authorized_keys\n");
+    s.push_str("and sshd password-login settings are restored. Host SSH keys stay new.\n");
+    s.push_str("vpn.toml gets [metrics] per_client_metrics if that section was missing.\n");
     s
 }
 
@@ -218,6 +226,7 @@ fn entry_name(path: &Path) -> Option<String> {
         "/etc/trusttunnel/",
         "/etc/systemd/system/",
         "/etc/caddy/",
+        "/etc/ssh/",
         "/root/",
         "/tmp/",
     ];
@@ -232,6 +241,7 @@ fn entry_name(path: &Path) -> Option<String> {
         "root" => Some(format!("data/root/{name}")),
         "tmp" => Some(format!("data/tmp/{name}")),
         "caddy" => Some(format!("data/etc/caddy/{name}")),
+        "ssh" => Some(format!("data/etc/ssh/{name}")),
         "system" => Some(format!("data/etc/systemd/system/{name}")),
         "trusttunnel" => {
             let gp = path.parent()?.parent()?.file_name()?.to_string_lossy();
@@ -331,10 +341,14 @@ mod tests {
         std::fs::create_dir_all(&script).unwrap();
         let mon = script.join("monitor.sh");
         std::fs::write(&mon, "#!/bin/sh\necho ok\n").unwrap();
+        let ssh_dir = script.join(".ssh");
+        std::fs::create_dir_all(&ssh_dir).unwrap();
+        let keys = ssh_dir.join("authorized_keys");
+        std::fs::write(&keys, "ssh-ed25519 AAAA test\n").unwrap();
         let zip = build_zip(&BackupInput {
             root,
             admin_toml,
-            extra: vec![mon],
+            extra: vec![mon, keys],
             crontab_text: "* * * * * /root/monitor.sh\n".into(),
         })
         .unwrap();
@@ -344,6 +358,7 @@ mod tests {
         assert!(zip_has_entry(&zip, "data/opt/trusttunnel/credentials.toml"));
         assert!(zip_has_entry(&zip, "data/etc/trusttunnel/admin.toml"));
         assert!(zip_has_entry(&zip, "data/root/monitor.sh"));
+        assert!(zip_has_entry(&zip, "data/root/.ssh/authorized_keys"));
         let mut z = ZipArchive::new(Cursor::new(zip)).unwrap();
         let mut sh = String::new();
         z.by_name("restore.sh")
@@ -359,5 +374,8 @@ mod tests {
         assert!(sh.contains("bot_listener.sh"));
         assert!(sh.contains("certbot.timer"));
         assert!(sh.contains("renewal-hooks/deploy"));
+        assert!(sh.contains("per_client_metrics"));
+        assert!(sh.contains("authorized_keys"));
+        assert!(sh.contains("PasswordAuthentication"));
     }
 }

@@ -167,6 +167,7 @@ pub fn apply_form(vpn: &mut VpnToml, form: &VpnForm) -> AdminResult<()> {
         parse_u64(form.default_max_traffic_bytes_per_client.clone());
     vpn.traffic_usage_file = parse_optional_string(form.traffic_usage_file.clone());
     vpn.destination_stats_file = parse_optional_string(form.destination_stats_file.clone());
+    vpn.ensure_dashboard_metrics();
     Ok(())
 }
 
@@ -182,6 +183,7 @@ mod tests {
         apply_form(&mut vpn, &form).unwrap();
         assert!(!vpn.ipv6_available);
         assert!(!vpn.ping_enable);
+        assert!(vpn.metrics.is_some());
     }
 
     #[test]
@@ -195,5 +197,16 @@ mod tests {
         apply_form(&mut vpn, &form).unwrap();
         assert!(vpn.ipv6_available);
         assert!(vpn.ping_enable);
+        assert!(vpn.metrics.as_ref().is_some_and(|m| m.per_client_metrics));
+    }
+
+    #[test]
+    fn save_writes_metrics_listener_if_missing() {
+        let mut vpn = VpnToml::from_str("listen_address = \"0.0.0.0:443\"\n").unwrap();
+        assert!(vpn.metrics.is_none());
+        apply_form(&mut vpn, &VpnForm::default()).unwrap();
+        let text = vpn.to_string_pretty().unwrap();
+        assert!(text.contains("[metrics]"));
+        assert!(text.contains("per_client_metrics"));
     }
 }
