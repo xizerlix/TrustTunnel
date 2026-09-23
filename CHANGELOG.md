@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Fix] Restore downloads GitHub binaries if they were missing from the zip,
+  starts Telegram bots, enables certbot.timer plus a SIGHUP deploy hook.
+  Admin and endpoint crate versions are 1.1.39.
 - [Fix] Admin IP modal shows a map for public IPs even when monitor.sh
   cached geo without lat/lon; lookup uses curl + ipwho.is fallback.
   Admin and endpoint crate versions are 1.1.38.

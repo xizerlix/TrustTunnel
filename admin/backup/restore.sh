@@ -13,6 +13,72 @@ need_root() {
   fi
 }
 
+bin_ok() {
+  f="$1"
+  [ -x "$f" ] || return 1
+  sz=$(stat -c%s "$f" 2>/dev/null || wc -c <"$f")
+  [ "$sz" -gt 1000000 ]
+}
+
+install_release_binaries() {
+  repo="${TT_GITHUB_REPO:-xizerlix/TrustTunnel}"
+  default_tag=""
+  default_tag=$(curl -fsS --max-time 8 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null || true)
+  [ -n "$default_tag" ] || default_tag="custom-1.1.39"
+  say ""
+  say "VPN/admin binaries: download from GitHub if missing or truncated."
+  printf "Release tag [%s]: " "$default_tag"
+  read -r TAG
+  TAG="$(printf '%s' "${TAG:-$default_tag}" | tr -d '[:space:]')"
+  [ -n "$TAG" ] || die "release tag is required"
+  name="trusttunnel-${TAG}-linux-x86_64"
+  url="https://github.com/${repo}/releases/download/${TAG}/${name}.tar.gz"
+  say "Downloading $url ..."
+  tmp=$(mktemp -d)
+  if ! curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o "$tmp/tt.tgz" "$url"; then
+    rm -rf "$tmp"
+    die "could not download $url — check the tag and disk space (df -h)"
+  fi
+  if ! tar -xzf "$tmp/tt.tgz" -C "$tmp"; then
+    rm -rf "$tmp"
+    die "tar extract failed (disk full? df -h / /tmp)"
+  fi
+  ep=$(find "$tmp" -name trusttunnel_endpoint -type f | head -n 1)
+  ad=$(find "$tmp" -name trusttunnel_admin -type f | head -n 1)
+  if [ -z "$ep" ]; then
+    rm -rf "$tmp"
+    die "archive has no trusttunnel_endpoint"
+  fi
+  mkdir -p /opt/trusttunnel
+  install -m 0755 "$ep" /opt/trusttunnel/trusttunnel_endpoint
+  if [ -n "$ad" ]; then
+    install -m 0755 "$ad" /opt/trusttunnel/trusttunnel_admin
+  fi
+  rm -rf "$tmp"
+  say "Installed binaries to /opt/trusttunnel"
+}
+
+start_root_daemons() {
+  need_jq=0
+  for s in /root/bot_listener.sh /root/telegram_vpn_bot.sh /root/monitor.sh; do
+    [ -f "$s" ] && need_jq=1
+  done
+  if [ "$need_jq" -eq 1 ] && command -v apt-get >/dev/null 2>&1; then
+    apt-get install -y -qq jq >/dev/null 2>&1 || true
+  fi
+  for s in /root/bot_listener.sh /root/telegram_vpn_bot.sh; do
+    if [ -x "$s" ]; then
+      if pgrep -f "$s" >/dev/null 2>&1; then
+        say "$s already running"
+      else
+        say "Starting $s ..."
+        nohup "$s" >/dev/null 2>&1 &
+      fi
+    fi
+  done
+}
+
 here="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 cd "$here"
 
@@ -41,15 +107,15 @@ LE_EMAIL="$(printf '%s' "$LE_EMAIL" | tr -d '[:space:]')"
 [ -n "$LE_EMAIL" ] || die "email is required"
 
 say ""
-say "Installing packages (curl, certbot)..."
+say "Installing packages (curl, certbot, python3, jq)..."
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq curl certbot ca-certificates python3 >/dev/null
+  apt-get install -y -qq curl certbot ca-certificates python3 jq >/dev/null
 elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y curl certbot python3
+  dnf install -y curl certbot python3 jq
 elif command -v yum >/dev/null 2>&1; then
-  yum install -y curl certbot python3
+  yum install -y curl certbot python3 jq
 else
   say "WARNING: install curl and certbot yourself, then press Enter"
   read -r _
@@ -67,21 +133,6 @@ fi
 say "Public IPv4 of this host (check DuckDNS A record): ${PUB_IP:-unknown}"
 printf "Press Enter when DNS for %s points here... " "$NEW_HOST"
 read -r _
-
-copy_tree() {
-  src="$1"
-  dst="$2"
-  if [ -e "$src" ]; then
-    mkdir -p "$(dirname "$dst")"
-    if [ -d "$src" ]; then
-      mkdir -p "$dst"
-      cp -a "$src"/. "$dst"/
-    else
-      mkdir -p "$(dirname "$dst")"
-      cp -a "$src" "$dst"
-    fi
-  fi
-}
 
 say "Copying backup files..."
 if [ -d data/opt/trusttunnel ]; then
@@ -112,6 +163,11 @@ fi
 chmod +x /opt/trusttunnel/trusttunnel_endpoint 2>/dev/null || true
 chmod +x /opt/trusttunnel/trusttunnel_admin 2>/dev/null || true
 chmod +x /opt/trusttunnel/setup_wizard 2>/dev/null || true
+
+if ! bin_ok /opt/trusttunnel/trusttunnel_endpoint || ! bin_ok /opt/trusttunnel/trusttunnel_admin; then
+  say "Binaries missing or too small (backup skips large files). Installing from GitHub..."
+  install_release_binaries
+fi
 
 say "Stopping old listeners on 80/443 if any..."
 systemctl stop trusttunnel 2>/dev/null || true
@@ -160,21 +216,37 @@ EOF
   (crontab -l 2>/dev/null | grep -v duckdns-update.sh; echo "*/5 * * * * /root/duckdns-update.sh") | crontab - || true
 fi
 
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/trusttunnel.sh <<'EOF'
+#!/bin/sh
+systemctl kill -s HUP trusttunnel 2>/dev/null || true
+EOF
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/trusttunnel.sh
+systemctl enable --now certbot.timer 2>/dev/null || systemctl enable --now certbot-renew.timer 2>/dev/null || true
+
+if grep -q '127.0.0.1:8443' /etc/systemd/system/trusttunnel-admin.service 2>/dev/null; then
+  mkdir -p /etc/systemd/system/trusttunnel-admin.service.d
+  printf '%s\n' '[Service]' 'Environment=TT_SECURE_COOKIES=false' \
+    > /etc/systemd/system/trusttunnel-admin.service.d/localhost.conf
+fi
+
 systemctl daemon-reload 2>/dev/null || true
 if [ -f /etc/systemd/system/trusttunnel.service ]; then
-  systemctl enable --now trusttunnel || systemctl restart trusttunnel || true
+  systemctl enable trusttunnel || true
+  systemctl restart trusttunnel || true
 fi
 if [ -f /etc/systemd/system/trusttunnel-admin.service ]; then
-  systemctl enable --now trusttunnel-admin || systemctl restart trusttunnel-admin || true
+  systemctl enable trusttunnel-admin || true
+  systemctl restart trusttunnel-admin || true
 fi
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files caddy.service >/dev/null 2>&1; then
-  systemctl restart caddy || true
-fi
+
+start_root_daemons
 
 say ""
 say "Done."
-say "Endpoint + admin should be up. Admin is usually reverse-proxied on :443"
-say "or bound on 127.0.0.1:8443 (see trusttunnel-admin.service)."
+say "Endpoint should listen on :443. Admin default is 127.0.0.1:8443 (SSH tunnel):"
+say "  ssh -L 8443:127.0.0.1:8443 root@THIS_HOST"
+say "  then open http://127.0.0.1:8443/"
 say "Point clients at the new hostname: $NEW_HOST"
-say "If certbot failed, fix DNS/port 80 and run certbot, then restart trusttunnel."
+say "certbot.timer renews the cert; a deploy hook sends SIGHUP to trusttunnel."
 say ""

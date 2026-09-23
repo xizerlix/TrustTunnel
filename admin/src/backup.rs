@@ -6,7 +6,7 @@ use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 use zip::ZipWriter;
 
-const MAX_FILE: u64 = 80 * 1024 * 1024;
+const MAX_FILE: u64 = 150 * 1024 * 1024;
 const RESTORE_SH: &str = include_str!("../backup/restore.sh");
 
 const KNOWN_SCRIPTS: &[&str] = &[
@@ -355,5 +355,9 @@ mod tests {
         assert!(sh.contains("trusttunnel-admin"));
         assert!(sh.contains("hosts.toml"));
         assert!(sh.contains("duckdns-update.sh"));
+        assert!(sh.contains("github.com"));
+        assert!(sh.contains("bot_listener.sh"));
+        assert!(sh.contains("certbot.timer"));
+        assert!(sh.contains("renewal-hooks/deploy"));
     }
 }

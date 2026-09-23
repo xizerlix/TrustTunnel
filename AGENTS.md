@@ -228,8 +228,12 @@ protocol/deep-link format, library API) when relevant.
    a zip (configs under `/opt/trusttunnel`, `admin.toml`, systemd units,
    `crontab -l`, `/root` scripts referenced from cron, plus `restore.sh`).
    Restore MUST issue a new Let's Encrypt cert for a new hostname
-   (DuckDNS instructions); do not reuse the old domain. Do not put backup
-   zip contents in git.
+   (DuckDNS instructions); do not reuse the old domain. If endpoint/admin
+   binaries are missing from the zip, restore MUST download the GitHub
+   release tarball. Restore MUST start `/root/bot_listener.sh` (and
+   telegram bot if present) instead of waiting for `@reboot`. Enable
+   `certbot.timer` and a renew deploy hook that HUP's the endpoint.
+   Do not put backup zip contents in git.
    Admin 2FA is TOTP (`totp_enabled` / `totp_secret` in `admin.toml`). The
    shared secret MUST stay on the server; do not commit it. The setup card
    MUST show an SVG QR of the otpauth URI (no CDN). Disable 2FA MUST use a
