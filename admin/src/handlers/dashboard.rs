@@ -1,4 +1,6 @@
-use crate::apply::{read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show};
+use crate::apply::{
+    kick_user_ip, read_clients_json, read_prometheus_metrics, systemctl_reboot, systemctl_show,
+};
 use crate::auth::{verify_csrf, Authenticated};
 use crate::i18n::{self, I18n};
 use crate::live::IpView;
@@ -9,6 +11,7 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -92,6 +95,8 @@ pub struct UserRow {
     pub quota_limit_h: String,
     pub quota_used_pct: u8,
     pub quota_exceeded: bool,
+    pub last_seen_unix: Option<u64>,
+    pub last_seen_h: String,
     pub disabled: bool,
     pub note: String,
     pub tags: Vec<String>,
@@ -151,6 +156,35 @@ pub fn humanize_duration(d: Duration) -> String {
     } else {
         format!("{secs}s")
     }
+}
+
+pub fn format_last_seen(ts: Option<u64>, now: u64, online: bool, t: &I18n) -> String {
+    if online {
+        return t.last_seen_now.to_string();
+    }
+    let Some(ts) = ts else {
+        return t.last_seen_never.to_string();
+    };
+    let age = now.saturating_sub(ts);
+    if age < 60 {
+        return t.last_seen_now.to_string();
+    }
+    if age < 86_400 {
+        let hours = age / 3_600;
+        let mins = (age % 3_600) / 60;
+        if hours == 0 {
+            return t.last_seen_ago_m.replacen("{}", &mins.to_string(), 1);
+        }
+        return t
+            .last_seen_ago_hm
+            .replacen("{}", &hours.to_string(), 1)
+            .replacen("{}", &mins.to_string(), 1);
+    }
+    chrono::Local
+        .timestamp_opt(ts as i64, 0)
+        .single()
+        .map(|dt| dt.format(t.last_seen_date_fmt).to_string())
+        .unwrap_or_else(|| t.last_seen_never.to_string())
 }
 
 fn keep_dashboard_user(in_credentials: bool, active: bool, total_bytes: u64) -> bool {
@@ -785,10 +819,22 @@ async fn collect(state: &AppState) -> Stats {
             quota_limit_h,
             quota_used_pct,
             quota_exceeded,
+            last_seen_unix: None,
+            last_seen_h: String::new(),
             disabled,
             note,
             tags,
         });
+    }
+    let last_path = crate::live::last_seen_path(&state.paths.root);
+    let online: Vec<String> = users
+        .iter()
+        .filter(|u| u.active)
+        .map(|u| u.username.clone())
+        .collect();
+    let seen_map = crate::live::touch_last_seen(&last_path, &online);
+    for u in &mut users {
+        u.last_seen_unix = seen_map.get(&u.username).copied();
     }
     users.sort_by(|a, b| {
         fn rank(u: &UserRow) -> u8 {
@@ -854,6 +900,11 @@ async fn collect(state: &AppState) -> Stats {
 }
 
 fn fill_data(stats: Stats, t: I18n) -> DashboardDataTemplate {
+    let now = crate::live::unix_now();
+    let mut users = stats.users;
+    for u in &mut users {
+        u.last_seen_h = format_last_seen(u.last_seen_unix, now, u.active, &t);
+    }
     DashboardDataTemplate {
         t,
         service_active: stats.service_active,
@@ -865,7 +916,7 @@ fn fill_data(stats: Stats, t: I18n) -> DashboardDataTemplate {
         traffic_inbound_h: stats.traffic_inbound_h,
         traffic_outbound_h: stats.traffic_outbound_h,
         traffic_total_h: stats.traffic_total_h,
-        users: stats.users,
+        users,
         host_version: stats.host_version,
         host_hostname: stats.host_hostname,
         host_cores: stats.host_cores,
@@ -1058,6 +1109,71 @@ pub(crate) fn usage_file_totals(root: &Path) -> (u64, u64) {
         usage.values().map(|u| u.inbound).sum(),
         usage.values().map(|u| u.outbound).sum(),
     )
+}
+
+#[derive(Deserialize, Default)]
+pub struct KickQuery {
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub ip: String,
+}
+
+pub async fn ip_kick(
+    State(state): State<AppState>,
+    Authenticated(session): Authenticated,
+    headers: HeaderMap,
+    Query(q): Query<KickQuery>,
+) -> Response {
+    if verify_csrf(&headers, &session).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(OpJson {
+                ok: false,
+                message: "csrf".into(),
+            }),
+        )
+            .into_response();
+    }
+    let username = q.user.trim();
+    let ip = q.ip.trim();
+    if username.is_empty()
+        || username.len() > 128
+        || username.contains('\0')
+        || ip.is_empty()
+        || ip.len() > 64
+        || ip.contains('\0')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OpJson {
+                ok: false,
+                message: "invalid".into(),
+            }),
+        )
+            .into_response();
+    }
+    let addr = state.paths.metrics_address.clone();
+    let user = username.to_string();
+    let ip = ip.to_string();
+    let kicked = tokio::task::spawn_blocking(move || kick_user_ip(&addr, &user, &ip))
+        .await
+        .unwrap_or_else(|e| Err(crate::error::AdminError::Apply(e.to_string())));
+    match kicked {
+        Ok(_) => Json(OpJson {
+            ok: true,
+            message: String::new(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(OpJson {
+                ok: false,
+                message: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn user_lock(
@@ -1447,6 +1563,21 @@ client_sessions_per_user{username="bob",protocol_type="HTTP2"} 4
         assert_eq!(humanize(2048), "2.00 KB");
         assert_eq!(humanize_duration(Duration::from_secs(90)), "1m");
         assert_eq!(humanize_duration(Duration::from_secs(3700)), "1h 1m");
+    }
+
+    #[test]
+    fn last_seen_within_day_is_relative() {
+        let t = crate::i18n::EN;
+        assert_eq!(format_last_seen(None, 10_000, false, &t), "—");
+        assert_eq!(format_last_seen(Some(9_000), 10_000, true, &t), "just now");
+        assert_eq!(
+            format_last_seen(Some(10_000 - 90), 10_000, false, &t),
+            "1m ago"
+        );
+        assert_eq!(
+            format_last_seen(Some(10_000 - 3_700), 10_000, false, &t),
+            "1h 1m ago"
+        );
     }
 
     #[test]

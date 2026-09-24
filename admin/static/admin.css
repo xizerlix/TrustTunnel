@@ -488,6 +488,22 @@ textarea:focus {
   flex-shrink: 0;
   color: #475569;
 }
+.td-seen { white-space: nowrap; }
+.seen-label { display: none; }
+.ip-kick {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ip-kick:hover { color: #e11d48; }
 
 @media (max-width: 767px) {
   .user-table-wrap { overflow-x: visible; }
@@ -500,7 +516,8 @@ textarea:focus {
     grid-template-areas:
       "user sess lock"
       "ip ip ip"
-      "traf traf quota";
+      "traf traf quota"
+      "seen seen seen";
     gap: 0.35rem 0.75rem;
     align-items: start;
     padding: 0.75rem 0.85rem;
@@ -515,6 +532,8 @@ textarea:focus {
   .td-ip { grid-area: ip; }
   .td-traf { grid-area: traf; }
   .td-quota { grid-area: quota; justify-self: end; align-self: center; }
+  .td-seen { grid-area: seen; color: #475569; white-space: nowrap; }
+  .seen-label { display: inline; }
   .td-lock { grid-area: lock; justify-self: end; }
   .td-quota .w-24 { width: 4.5rem; }
 }

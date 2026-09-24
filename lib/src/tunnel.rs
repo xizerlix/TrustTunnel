@@ -125,12 +125,17 @@ impl Tunnel {
             let shutdown = self.context.shutdown.lock().unwrap();
             (shutdown.notification_handler(), shutdown.completion_guard())
         };
+        let kick = self.context.metrics.connection_kick(&self.id.to_string());
         tokio::select! {
             x = shutdown_notification.wait() => {
                 match x {
                     Ok(_) => self.downstream.graceful_shutdown().await,
                     Err(e) => Err(io::Error::other(format!("{}", e))),
                 }
+            }
+            _ = kick.wait() => {
+                log_id!(debug, self.id, "Tunnel kicked");
+                self.downstream.graceful_shutdown().await
             }
             x = self.listen_inner() => x,
         }

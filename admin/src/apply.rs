@@ -350,6 +350,34 @@ pub fn read_clients_json(metrics_address: &str) -> AdminResult<serde_json::Value
     parse_json_body(&body)
 }
 
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+pub fn kick_user_ip(metrics_address: &str, user: &str, ip: &str) -> AdminResult<u64> {
+    let path = format!("/kick?user={}&ip={}", urlencode(user), urlencode(ip));
+    let (status, body) = metrics_http_get(metrics_address, &path)?;
+    if status == 404 {
+        return Err(AdminError::Apply(
+            "metrics /kick not found (enable per-client metrics)".into(),
+        ));
+    }
+    if status != 200 {
+        return Err(AdminError::Apply(format!("GET /kick -> {status}")));
+    }
+    let v = parse_json_body(&body)?;
+    Ok(v.get("kicked").and_then(|x| x.as_u64()).unwrap_or(0))
+}
+
 pub fn read_prometheus_metrics(metrics_address: &str) -> AdminResult<String> {
     let (status, body) = metrics_http_get(metrics_address, "/metrics")?;
     if status != 200 {

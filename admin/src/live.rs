@@ -200,7 +200,7 @@ impl LiveCache {
     }
 }
 
-fn unix_now() -> u64 {
+pub(crate) fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -208,10 +208,32 @@ fn unix_now() -> u64 {
 }
 
 fn load_json_map(path: &str) -> HashMap<String, u64> {
+    load_json_map_path(std::path::Path::new(path))
+}
+
+fn load_json_map_path(path: &std::path::Path) -> HashMap<String, u64> {
     let Ok(s) = std::fs::read_to_string(path) else {
         return HashMap::new();
     };
     serde_json::from_str(&s).unwrap_or_default()
+}
+
+pub fn last_seen_path(root: &std::path::Path) -> std::path::PathBuf {
+    root.join("last_seen.json")
+}
+
+pub fn touch_last_seen(path: &std::path::Path, online: &[String]) -> HashMap<String, u64> {
+    let now = unix_now();
+    let mut map = load_json_map_path(path);
+    for u in online {
+        if !u.is_empty() {
+            map.insert(u.clone(), now);
+        }
+    }
+    if let Ok(s) = serde_json::to_string(&map) {
+        let _ = std::fs::write(path, s);
+    }
+    map
 }
 
 pub fn humanize_nosec(secs: u64) -> String {
@@ -878,13 +900,7 @@ pub fn read_cert_summary(cert_path: &str) -> Option<(String, String)> {
     let mut end = String::new();
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("subject=") {
-            subject = rest
-                .rsplit("CN = ")
-                .next()
-                .or_else(|| rest.rsplit("CN=").next())
-                .unwrap_or(rest)
-                .trim()
-                .to_string();
+            subject = subject_cn(rest);
         }
         if let Some(rest) = line.strip_prefix("notAfter=") {
             end = rest.trim().to_string();
@@ -895,11 +911,54 @@ pub fn read_cert_summary(cert_path: &str) -> Option<(String, String)> {
             }
         }
     }
+    if subject.is_empty() {
+        subject = first_san_dns(cert_path);
+    }
     if subject.is_empty() && end.is_empty() {
         None
     } else {
         Some((subject, end))
     }
+}
+
+pub(crate) fn subject_cn(rest: &str) -> String {
+    for sep in ["CN = ", "CN=", "/CN="] {
+        if let Some(i) = rest.rfind(sep) {
+            let mut v = rest[i + sep.len()..].trim();
+            if let Some((head, _)) = v.split_once(',') {
+                v = head.trim();
+            }
+            if let Some((head, _)) = v.split_once('/') {
+                v = head.trim();
+            }
+            if !v.is_empty() {
+                return v.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+fn first_san_dns(cert_path: &str) -> String {
+    let out = std::process::Command::new("openssl")
+        .args(["x509", "-in", cert_path, "-noout", "-ext", "subjectAltName"])
+        .output();
+    let Ok(out) = out else {
+        return String::new();
+    };
+    if !out.status.success() {
+        return String::new();
+    }
+    for part in String::from_utf8_lossy(&out.stdout).split([',', '\n']) {
+        let p = part.trim();
+        if let Some(d) = p.strip_prefix("DNS:") {
+            let d = d.trim();
+            if !d.is_empty() {
+                return d.to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 fn second_top_frame(raw: &str) -> Option<String> {
@@ -981,6 +1040,25 @@ mod tests {
         let (busy, total) = parse_proc_stat_cpu("cpu  10 0 10 80 0 0 0 0").unwrap();
         assert_eq!(total, 100);
         assert_eq!(busy, 20);
+    }
+
+    #[test]
+    fn subject_cn_strips_openssl_prefixes() {
+        assert_eq!(subject_cn("CN = app.example.com"), "app.example.com");
+        assert_eq!(subject_cn("CN=app.example.com"), "app.example.com");
+        assert_eq!(subject_cn("C = US, CN = app.example.com"), "app.example.com");
+        assert_eq!(subject_cn("CN="), "");
+        assert_eq!(subject_cn("CN = "), "");
+    }
+
+    #[test]
+    fn last_seen_touch_keeps_offline_and_updates_online() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("last_seen.json");
+        std::fs::write(&path, r#"{"alice":100,"bob":200}"#).unwrap();
+        let map = touch_last_seen(&path, &["alice".into()]);
+        assert!(map.get("alice").copied().unwrap() > 100);
+        assert_eq!(map.get("bob").copied(), Some(200));
     }
 
     #[test]

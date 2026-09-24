@@ -9,14 +9,16 @@ use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 
 const LOG_FMT: &str = "METRICS={}";
 const HEALTH_CHECK_PATH: &str = "/health-check";
 const METRICS_PATH: &str = "/metrics";
 const CLIENTS_PATH: &str = "/clients";
+const KICK_PATH: &str = "/kick";
 
 pub(crate) struct Metrics {
     _registry: prometheus::Registry,
@@ -33,12 +35,63 @@ pub(crate) struct Metrics {
     traffic_limiter: Option<Arc<TrafficLimiter>>,
 }
 
-#[derive(Debug, Default)]
+pub(crate) struct KickGate {
+    flagged: AtomicBool,
+    notify: Notify,
+}
+
+impl std::fmt::Debug for KickGate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KickGate").finish()
+    }
+}
+
+impl KickGate {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            flagged: AtomicBool::new(false),
+            notify: Notify::new(),
+        })
+    }
+
+    pub(crate) fn kick(&self) {
+        self.flagged.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub(crate) async fn wait(&self) {
+        loop {
+            if self.flagged.load(Ordering::SeqCst) {
+                return;
+            }
+            let notified = self.notify.notified();
+            if self.flagged.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ClientInfo {
     username: Option<String>,
     ip: Option<IpAddr>,
     sessions: u64,
     user_agents: BTreeSet<String>,
+    kick: Arc<KickGate>,
+}
+
+impl Default for ClientInfo {
+    fn default() -> Self {
+        Self {
+            username: None,
+            ip: None,
+            sessions: 0,
+            user_agents: BTreeSet::new(),
+            kick: KickGate::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -218,12 +271,10 @@ impl Metrics {
     /// session gauge accounting is owned by the `ClientSessionsCounter` RAII guard.
     pub fn register_connection(&self, conn_id: String, ip: Option<IpAddr>) {
         if let Ok(mut clients) = self.clients.lock() {
-            clients.entry(conn_id).or_insert_with(|| ClientInfo {
-                username: None,
-                ip,
-                sessions: 0,
-                user_agents: BTreeSet::new(),
-            });
+            let entry = clients.entry(conn_id).or_default();
+            if ip.is_some() {
+                entry.ip = ip;
+            }
         }
     }
 
@@ -248,6 +299,36 @@ impl Metrics {
         if let Ok(mut clients) = self.clients.lock() {
             clients.remove(conn_id);
         }
+    }
+
+    pub fn connection_kick(&self, conn_id: &str) -> Arc<KickGate> {
+        if let Ok(mut clients) = self.clients.lock() {
+            return clients.entry(conn_id.to_string()).or_default().kick.clone();
+        }
+        KickGate::new()
+    }
+
+    pub fn kick_user_ip(&self, username: &str, ip: &str) -> u64 {
+        let Ok(clients) = self.clients.lock() else {
+            return 0;
+        };
+        let parsed: Option<IpAddr> = ip.parse().ok();
+        let mut n = 0u64;
+        for info in clients.values() {
+            if info.username.as_deref() != Some(username) {
+                continue;
+            }
+            let Some(got) = info.ip else {
+                continue;
+            };
+            let same = parsed.map(|p| p == got).unwrap_or(false) || got.to_string() == ip;
+            if !same {
+                continue;
+            }
+            info.kick.kick();
+            n = n.saturating_add(1);
+        }
+        n
     }
 
     /// Relabel an active session from its current username to a new one.
@@ -582,6 +663,7 @@ async fn handle_request(
             HEALTH_CHECK_PATH => handle_health_check(stream),
             METRICS_PATH => handle_metrics_collect(&context.metrics, stream).await,
             CLIENTS_PATH => handle_clients_collect(context.clone(), &context.metrics, stream).await,
+            KICK_PATH => handle_kick(&context.metrics, stream).await,
             x => {
                 log_id!(debug, log_id, "Unexpected path: {}", x);
                 let respond = stream.split().1;
@@ -611,6 +693,91 @@ async fn handle_request(
 
 fn handle_health_check(stream: Box<dyn http_codec::Stream>) -> io::Result<()> {
     stream.split().1.send_ok_response(true).map(|_| ())
+}
+
+fn query_param(query: &str, key: &str) -> Option<String> {
+    for pair in query.split('&') {
+        let Some((k, v)) = pair.split_once('=') else {
+            continue;
+        };
+        if k == key {
+            return Some(percent_decode(v));
+        }
+    }
+    None
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        if bytes[i] == b'+' {
+            out.push(b' ');
+        } else {
+            out.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+async fn send_json(
+    stream: Box<dyn http_codec::Stream>,
+    status: http::status::StatusCode,
+    body: Vec<u8>,
+) -> io::Result<()> {
+    let mut content = Bytes::from(body);
+    let response = http::Response::builder()
+        .version(stream.request().request().version)
+        .status(status)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_LENGTH, content.len())
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+    let mut sink = stream
+        .split()
+        .1
+        .send_response(response, false)?
+        .into_pipe_sink();
+    while !content.is_empty() {
+        content = sink.write(content)?;
+        sink.wait_writable().await?;
+    }
+    sink.eof()
+}
+
+async fn handle_kick(metrics: &Metrics, stream: Box<dyn http_codec::Stream>) -> io::Result<()> {
+    if !metrics.per_client() {
+        let respond = stream.split().1;
+        return respond.send_bad_response(http::status::StatusCode::NOT_FOUND, vec![]);
+    }
+    let uri = &stream.request().request().uri;
+    let query = uri.query().unwrap_or("");
+    let user = query_param(query, "user").unwrap_or_default();
+    let ip = query_param(query, "ip").unwrap_or_default();
+    if user.is_empty() || ip.is_empty() || user.len() > 128 || ip.len() > 64 {
+        return send_json(
+            stream,
+            http::status::StatusCode::BAD_REQUEST,
+            br#"{"ok":false}"#.to_vec(),
+        )
+        .await;
+    }
+    let kicked = metrics.kick_user_ip(&user, &ip);
+    let body = format!(r#"{{"ok":true,"kicked":{kicked}}}"#).into_bytes();
+    send_json(stream, http::status::StatusCode::OK, body).await
 }
 
 async fn handle_clients_collect(
@@ -890,5 +1057,40 @@ mod tests {
             sanitize_user_agent("Android\u{0007} 1.4"),
             Some("Android 1.4".into())
         );
+    }
+
+    #[test]
+    fn query_param_skips_pairs_without_equals() {
+        assert_eq!(
+            query_param("foo&user=alice&ip=1.2.3.4", "user").as_deref(),
+            Some("alice")
+        );
+        assert_eq!(
+            query_param("user=a%3Ab&ip=2001%3Adb8%3A%3A1", "ip").as_deref(),
+            Some("2001:db8::1")
+        );
+    }
+
+    #[test]
+    fn kick_user_ip_counts_matching_tls_conns() {
+        let m = metrics(true);
+        m.register_connection("a1".into(), Some("203.0.113.10".parse().unwrap()));
+        m.register_connection("a2".into(), Some("203.0.113.10".parse().unwrap()));
+        m.register_connection("a3".into(), Some("198.51.100.1".parse().unwrap()));
+        m.register_connection("b1".into(), Some("203.0.113.10".parse().unwrap()));
+        let _g1 = m
+            .clone()
+            .client_sessions_counter(Protocol::Http2, "a1".into(), Some("alice".into()));
+        let _g2 = m
+            .clone()
+            .client_sessions_counter(Protocol::Http2, "a2".into(), Some("alice".into()));
+        let _g3 = m
+            .clone()
+            .client_sessions_counter(Protocol::Http2, "a3".into(), Some("alice".into()));
+        let _g4 = m
+            .clone()
+            .client_sessions_counter(Protocol::Http2, "b1".into(), Some("bob".into()));
+        assert_eq!(m.kick_user_ip("alice", "203.0.113.10"), 2);
+        assert_eq!(m.kick_user_ip("alice", "198.51.100.1"), 1);
     }
 }

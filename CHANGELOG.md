@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- [Feature] Dashboard last seen is per username (not per IP): under 24h
+  as hours/minutes ago, otherwise local date and time. Stored in
+  `last_seen.json`. Kick × next to an IP drops that tunnel; reconnect
+  is allowed. Host card certificate shows the hostname, not `CN=`.
+  Admin and endpoint crate versions are 1.1.42.
 - [Feature] Admin Settings can turn off password sign-in (`password_login`
   in admin.toml) for SSH-tunnel-only access to 127.0.0.1:8443. The card
   warns this is dangerous on a public login page. Admin and endpoint crate

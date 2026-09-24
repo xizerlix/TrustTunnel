@@ -220,6 +220,14 @@ protocol/deep-link format, library API) when relevant.
    The admin dashboard SHOULD keep rows for usernames that still have
    `traffic_usage_file` (or live) counters after they were deleted from
    `credentials.toml`, and MUST label those rows as removed.
+   Dashboard last seen is per username (any of their IPs), stored in
+   `last_seen.json` under the VPN working directory. If last activity is
+   under 24 hours, show hours/minutes ago; otherwise local date and time.
+   Dashboard IP kick is an × next to a live IP: POST `/dashboard/ip/kick`
+   then GET metrics `/kick` to drop that username+IP tunnel. The user can
+   reconnect; this is not a lock and not a domain ACL.
+   Certificate line on the host card MUST show the hostname (CN or SAN
+   DNS), not a raw `CN=` prefix from openssl.
    Admin Logs → top MUST sample `top -b` twice and display the second
    frame: the first batch iteration reports 0% CPU and lists tasks by PID.
    Admin login success, failed password, and rate-limit events SHOULD notify

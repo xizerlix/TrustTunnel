@@ -181,6 +181,7 @@ fn build_router(state: AppState) -> Router {
             get(handlers::dashboard::user_destinations),
         )
         .route("/dashboard/user/lock", post(handlers::dashboard::user_lock))
+        .route("/dashboard/ip/kick", post(handlers::dashboard::ip_kick))
         .route("/dashboard/user/note", post(handlers::dashboard::user_note))
         .route(
             "/dashboard/traffic",
@@ -373,7 +374,9 @@ mod tests {
         assert!(login.contains("totp_step"));
         assert!(login.contains("/login/totp"));
         let dash = include_str!("../templates/dashboard_data.html");
-        assert!(dash.contains("js-lock"));
+        assert!(dash.contains("js-kick-ip"));
+        assert!(dash.contains("td-seen"));
+        assert!(include_str!("../templates/dashboard.html").contains("data-kick-confirm"));
         assert!(dash.contains("width=\"22\""));
         assert!(dash.contains("user-table"));
         assert!(dash.contains("user-ip-line"));

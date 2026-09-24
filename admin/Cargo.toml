@@ -1,6 +1,6 @@
 [package]
 name = "trusttunnel_admin"
-version = "1.1.41"
+version = "1.1.42"
 edition = "2021"
 authors = ["Nikolay Fedorenko"]
 default-run = "trusttunnel_admin"

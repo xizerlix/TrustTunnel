@@ -103,6 +103,7 @@
       <th class="p-2">{{ t.ips }}</th>
       <th class="p-2">{{ t.traffic_used }}</th>
       <th class="p-2">{{ t.quota }}</th>
+      <th class="p-2">{{ t.last_seen }}</th>
       <th class="p-2">{{ t.access }}</th>
     </tr>
   </thead>
@@ -174,6 +175,7 @@
               {% endif %}
             {% endfor %}
             <span class="user-age text-slate-400">{{ ip.connected_h }}</span>
+            <button type="button" class="js-kick-ip ip-kick" data-user="{{ c.username }}" data-ip="{{ ip.address }}" title="{{ t.kick_ip }}" aria-label="{{ t.kick_ip }}">×</button>
           </div>
           {% endfor %}
         {% endif %}
@@ -194,6 +196,7 @@
           {% endif %}
         </div>
       </td>
+      <td class="td-seen p-2 text-xs text-slate-600 whitespace-nowrap"><span class="seen-label">{{ t.last_seen }}: </span>{{ c.last_seen_h }}</td>
       <td class="td-lock p-2">
         {% if !c.removed %}
         <button type="button"
